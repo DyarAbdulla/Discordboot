@@ -35,6 +35,13 @@ wheels/
 
 # Logs
 *.log
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+bot_memory.db*
 logs/
 bot.log
 api_usage.log
