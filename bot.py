@@ -192,10 +192,18 @@ class AIBootBot(commands.Bot):
         if not message.content:
             return
         
-        # Check if message is a command (starts with prefix)
+        # Clean message content (remove mention) for command checking
+        content = message.content
+        bot_mentioned = self.user in message.mentions
+        if bot_mentioned:
+            # Remove bot mentions to check for commands
+            content = content.replace(f"<@{self.user.id}>", "").strip()
+            content = content.replace(f"<@!{self.user.id}>", "").strip()
+        
+        # Check if message is a command (starts with prefix, even after removing mentions)
         prefix = self.config.get("prefix", "!")
-        if message.content.startswith(prefix):
-            # Let commands handle it
+        if content.startswith(prefix):
+            # Let commands handle it (use original message content)
             print(f"[DEBUG] Processing command: {message.content}")
             try:
                 await self.process_commands(message)
@@ -206,7 +214,6 @@ class AIBootBot(commands.Bot):
             return
         
         # Check if bot is mentioned or message is a DM
-        bot_mentioned = self.user in message.mentions
         is_dm = isinstance(message.channel, discord.DMChannel)
         
         # Only respond to mentions or DMs
