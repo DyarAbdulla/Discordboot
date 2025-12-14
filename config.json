@@ -1,0 +1,8 @@
+{
+  "prefix": "!",
+  "rate_limit_per_minute": 5,
+  "max_context_messages": 8,
+  "context_timeout_minutes": 30,
+  "enable_logging": true,
+  "log_file": "bot.log"
+}
