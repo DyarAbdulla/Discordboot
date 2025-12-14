@@ -96,6 +96,7 @@ class AIBootBot(commands.Bot):
         self.message_count = 0
         self.claude_responses = 0
         self.fallback_responses = 0
+        self.version = "2.0.1"  # Version tracking for deployment verification
         
         # Start background task to clean old conversations
         self.cleanup_task = None
@@ -343,7 +344,8 @@ class AIBootBot(commands.Bot):
                 f"`{prefix}help` - Show this help\n"
                 f"`{prefix}ping` - Check if I'm online\n"
                 f"`{prefix}info` - Bot information\n"
-                f"`{prefix}commands` - List commands"
+                f"`{prefix}commands` - List commands\n"
+                f"`{prefix}about` - Bot description & languages"
             ),
             inline=False
         )
@@ -430,10 +432,57 @@ class AIBootBot(commands.Bot):
             (f"{prefix}ping", "Check if bot is online"),
             (f"{prefix}info", "Show bot information and stats"),
             (f"{prefix}commands", "List all commands"),
+            (f"{prefix}about", "Show bot description and languages"),
         ]
         
         for cmd, desc in commands_list:
             embed.add_field(name=cmd, value=desc, inline=False)
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name="about")
+    async def about_command(self, ctx: commands.Context):
+        """Show bot information in multiple languages"""
+        
+        embed = discord.Embed(
+            title="🤖 AI Boot - Intelligent Discord Assistant",
+            description=(
+                "✨ **About Me:**\n"
+                "I'm AI Boot, your friendly AI-powered Discord bot! "
+                "I can have natural conversations, answer questions, help with tasks, "
+                "and chat in multiple languages.\n\n"
+                
+                "🌍 **Supported Languages:**\n"
+                "• **English** 🇬🇧\n"
+                "• **Kurdish** (کوردی) 🇹🇯\n"
+                "• **Arabic** (العربية) 🇸🇦\n\n"
+                
+                "💬 **How to Use:**\n"
+                "• Just @mention me (@AI Boot) in any channel\n"
+                "• Send me a direct message (DM)\n"
+                "• Reply to my messages\n"
+                "• Use commands like `!help`, `!info`, `!ping`\n\n"
+                
+                "🎯 **Features:**\n"
+                "• Natural AI conversations powered by Claude AI\n"
+                "• Multi-language support\n"
+                "• Conversation context memory\n"
+                "• Helpful responses and assistance\n"
+                "• Fun and engaging interactions\n\n"
+                
+                "💡 **Tip:** Try asking me anything in English, Kurdish, or Arabic - I understand all three!"
+            ),
+            color=discord.Color.blue()
+        )
+        
+        embed.set_footer(text="Created by DyarAbdulla ❤️")
+        
+        # Try to set bot avatar as thumbnail
+        try:
+            if self.user.avatar:
+                embed.set_thumbnail(url=self.user.avatar.url)
+        except:
+            pass
         
         await ctx.send(embed=embed)
     
