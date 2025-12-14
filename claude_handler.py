@@ -10,6 +10,14 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import json
 
+# Import TokenCounter for prompt overflow prevention
+try:
+    from utils.token_counter import TokenCounter
+    TOKEN_COUNTER_AVAILABLE = True
+except ImportError:
+    TOKEN_COUNTER_AVAILABLE = False
+    print("[WARNING] TokenCounter not available - prompt overflow prevention disabled")
+
 
 class ClaudeHandler:
     """Handles Claude API calls with error handling and logging"""
@@ -143,14 +151,20 @@ class ClaudeHandler:
             
             # Log failed API call with full error details
             error_msg = str(e)
-            print(f"[ERROR] Claude API call failed: {error_msg}")
-            self._log_api_call(user_name, False, 0, error_msg)
+            error_type = type(e).__name__
+            print(f"[ERROR] Claude API call failed!")
+            print(f"[ERROR] Error type: {error_type}")
+            print(f"[ERROR] Error message: {error_msg}")
+            import traceback
+            print(f"[ERROR] Traceback:")
+            traceback.print_exc()
+            self._log_api_call(user_name, False, 0, f"{error_type}: {error_msg}")
             
             # Return error details for debugging
             return {
                 "response": None,
                 "success": False,
-                "error": error_msg,
+                "error": f"{error_type}: {error_msg}",
                 "tokens_used": 0
             }
     
