@@ -44,7 +44,8 @@ class ClaudeHandler:
     async def generate_response(
         self,
         messages: List[Dict[str, str]],
-        user_name: Optional[str] = None
+        user_name: Optional[str] = None,
+        summaries: Optional[List[str]] = None
     ) -> Dict[str, any]:
         """
         Generate AI response using Claude API
@@ -52,6 +53,7 @@ class ClaudeHandler:
         Args:
             messages: List of conversation messages [{"role": "user", "content": "..."}, ...]
             user_name: Optional user name for context
+            summaries: Optional list of conversation summaries for long-term memory context
             
         Returns:
             Dictionary with 'response', 'success', 'error', 'tokens_used'
@@ -60,8 +62,17 @@ class ClaudeHandler:
             # Increment API call counter
             self.api_calls += 1
             
-            # Add user name to system prompt if provided
+            # Build system prompt with context
             system_prompt = self.system_prompt
+            
+            # Add summaries (long-term memory) to system prompt
+            if summaries:
+                system_prompt += "\n\nPrevious conversation summaries (for context):\n"
+                for summary in summaries:
+                    system_prompt += f"- {summary}\n"
+                system_prompt += "\nUse these summaries to remember past conversations, but focus on the current conversation."
+            
+            # Add user name to system prompt if provided
             if user_name:
                 system_prompt += f"\n\nThe user you're talking to is: {user_name}"
             

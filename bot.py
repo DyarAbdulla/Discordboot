@@ -28,6 +28,18 @@ except Exception as e:
 
 from responses import find_response, get_reaction
 
+# Import memory management
+try:
+    from utils.memory_manager import MemoryManager
+    from utils.summarizer import ConversationSummarizer
+    MEMORY_AVAILABLE = True
+    print("[OK] Memory manager module imported successfully")
+except Exception as e:
+    print(f"[ERROR] Warning: Memory manager not available: {e}")
+    import traceback
+    traceback.print_exc()
+    MEMORY_AVAILABLE = False
+
 
 class AIBootBot(commands.Bot):
     """Main bot class for AI Boot with Claude AI integration"""
@@ -80,8 +92,24 @@ class AIBootBot(commands.Bot):
             self.use_claude = False
             self.claude_handler = None
         
+        # Initialize memory manager for persistent storage
+        self.memory_manager = None
+        self.summarizer = None
+        if MEMORY_AVAILABLE:
+            try:
+                self.memory_manager = MemoryManager(
+                    db_path=self.config.get("memory_db_path", "bot_memory.db"),
+                    short_term_limit=self.config.get("short_term_memory_limit", 30)
+                )
+                if self.use_claude and self.claude_handler:
+                    self.summarizer = ConversationSummarizer(self.claude_handler)
+                print("[OK] Memory manager initialized")
+            except Exception as e:
+                print(f"[ERROR] Failed to initialize memory manager: {e}")
+                self.memory_manager = None
+        
         # Conversation context storage: {channel_id: {'messages': deque, 'last_activity': datetime}}
-        # Stores last 8 messages per channel for context
+        # This is now a fallback - primary storage is in database
         self.conversations = defaultdict(lambda: {
             'messages': deque(maxlen=8),
             'last_activity': datetime.now()
@@ -119,6 +147,59 @@ class AIBootBot(commands.Bot):
         """Called when bot is starting up"""
         # Start background task to clean old conversations
         self.cleanup_task = asyncio.create_task(self._cleanup_old_conversations())
+    
+    async def _summarize_old_messages(self, user_id: str, channel_id: str):
+        """
+        Summarize old messages when conversation gets too long
+        This creates long-term memory from past interactions
+        """
+        if not self.memory_manager or not self.summarizer:
+            return
+        
+        try:
+            # Get messages that need to be summarized (all except the most recent ones)
+            all_messages = self.memory_manager.get_recent_messages(
+                user_id=user_id,
+                channel_id=channel_id,
+                limit=100  # Get more messages to summarize
+            )
+            
+            # Keep recent messages (last 20), summarize the rest
+            if len(all_messages) <= 20:
+                return  # Not enough to summarize
+            
+            messages_to_summarize = all_messages[:-20]  # All except last 20
+            recent_messages = all_messages[-20:]  # Keep these
+            
+            if not messages_to_summarize:
+                return
+            
+            # Get timestamps
+            start_time = datetime.fromisoformat(messages_to_summarize[0]["timestamp"])
+            end_time = datetime.fromisoformat(messages_to_summarize[-1]["timestamp"])
+            
+            # Create summary using Claude
+            summary_text = await self.summarizer.summarize_messages(
+                messages=[{"role": m["role"], "content": m["content"]} for m in messages_to_summarize],
+                user_name=None
+            )
+            
+            # Store summary in database
+            self.memory_manager.create_summary(
+                user_id=user_id,
+                channel_id=channel_id,
+                summary_text=summary_text,
+                message_count=len(messages_to_summarize),
+                start_timestamp=start_time,
+                end_timestamp=end_time
+            )
+            
+            print(f"[INFO] Summarized {len(messages_to_summarize)} messages for user {user_id}")
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to summarize messages: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def _cleanup_old_conversations(self):
         """Background task to clear conversation context after 30 minutes of inactivity"""
@@ -240,15 +321,48 @@ class AIBootBot(commands.Bot):
                 if not content:
                     return
                 
-                # Get conversation context for this channel (last 8 messages)
-                conv_data = self.conversations[message.channel.id]
-                context_messages = list(conv_data['messages'])
+                # Store user message in database (persistent memory)
+                user_id = str(message.author.id)
+                channel_id = str(message.channel.id)
                 
-                # Update last activity time
-                conv_data['last_activity'] = datetime.now()
+                if self.memory_manager:
+                    self.memory_manager.add_message(
+                        user_id=user_id,
+                        channel_id=channel_id,
+                        role="user",
+                        content=content
+                    )
                 
-                # Add user message to context
-                context_messages.append({"role": "user", "content": content})
+                # Get conversation context from database (summaries + recent messages)
+                if self.memory_manager:
+                    api_messages, summary_texts = self.memory_manager.get_conversation_context(
+                        user_id=user_id,
+                        channel_id=channel_id,
+                        include_summaries=True
+                    )
+                    
+                    # Add current user message if not already in context
+                    if not api_messages or api_messages[-1]["content"] != content:
+                        api_messages.append({"role": "user", "content": content})
+                    
+                    # Check if we need to summarize old messages (if we have too many)
+                    if len(api_messages) > self.config.get("summarize_threshold", 50) and self.summarizer:
+                        await self._summarize_old_messages(user_id, channel_id)
+                        # Reload context after summarization
+                        api_messages, summary_texts = self.memory_manager.get_conversation_context(
+                            user_id=user_id,
+                            channel_id=channel_id,
+                            include_summaries=True
+                        )
+                        if not api_messages or api_messages[-1]["content"] != content:
+                            api_messages.append({"role": "user", "content": content})
+                else:
+                    # Fallback to in-memory storage
+                    conv_data = self.conversations[message.channel.id]
+                    api_messages = list(conv_data['messages'])
+                    api_messages.append({"role": "user", "content": content})
+                    summary_texts = []
+                    conv_data['last_activity'] = datetime.now()
                 
                 # Try Claude API first, fallback to static responses if it fails
                 response_text = None
@@ -257,10 +371,11 @@ class AIBootBot(commands.Bot):
                 # ALWAYS try Claude API if available
                 if self.use_claude and self.claude_handler:
                     print(f"[DEBUG] Calling Claude API for: {content[:50]}...")
-                    # Call Claude API with user name for context
+                    # Call Claude API with conversation history and summaries
                     result = await self.claude_handler.generate_response(
-                        messages=context_messages,
-                        user_name=message.author.display_name
+                        messages=api_messages,
+                        user_name=message.author.display_name,
+                        summaries=summary_texts if summary_texts else None
                     )
                     
                     if result["success"]:
@@ -283,14 +398,25 @@ class AIBootBot(commands.Bot):
                     response_text = find_response(content)
                     self.fallback_responses += 1
                 
-                # Add bot response to context
-                context_messages.append({"role": "assistant", "content": response_text})
-                
-                # Update conversation history (keeps last 8 messages)
-                conv_data['messages'] = deque(
-                    context_messages,
-                    maxlen=self.config.get("max_context_messages", 8)
-                )
+                # Store bot response in database (persistent memory)
+                if self.memory_manager:
+                    self.memory_manager.add_message(
+                        user_id=user_id,
+                        channel_id=channel_id,
+                        role="assistant",
+                        content=response_text
+                    )
+                else:
+                    # Fallback to in-memory storage
+                    conv_data = self.conversations[message.channel.id]
+                    conv_data['messages'].append({"role": "assistant", "content": response_text})
+                    # Keep last N messages
+                    max_context = self.config.get("max_context_messages", 8)
+                    if len(conv_data['messages']) > max_context:
+                        conv_data['messages'] = deque(
+                            list(conv_data['messages'])[-max_context:],
+                            maxlen=max_context
+                        )
                 
                 # Send response
                 await message.reply(response_text)

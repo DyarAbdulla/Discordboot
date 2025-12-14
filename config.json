@@ -4,5 +4,8 @@
   "max_context_messages": 8,
   "context_timeout_minutes": 30,
   "enable_logging": true,
-  "log_file": "bot.log"
+  "log_file": "bot.log",
+  "memory_db_path": "bot_memory.db",
+  "short_term_memory_limit": 30,
+  "summarize_threshold": 50
 }
