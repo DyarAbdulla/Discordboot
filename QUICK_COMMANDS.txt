@@ -1,0 +1,25 @@
+# Quick Commands for Terminal
+
+## After opening terminal, run these:
+
+# 1. Go to your project folder
+cd "C:\discord boot\ai boot"
+
+# 2. Check if Git is installed
+git --version
+
+# 3. If Git is installed, push changes:
+git add .
+git commit -m "Update bot with fixes"
+git push
+
+# 4. If Git is NOT installed, you can:
+# - Upload files manually to Railway
+# - Or install Git first
+
+## To check your bot files:
+dir
+
+## To see if bot is running locally:
+python bot.py
+
