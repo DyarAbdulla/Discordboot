@@ -8,6 +8,7 @@ from discord.ext import commands
 import os
 import json
 import asyncio
+import sqlite3
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
@@ -178,20 +179,39 @@ class AIBootBot(commands.Bot):
             start_time = datetime.fromisoformat(messages_to_summarize[0]["timestamp"])
             end_time = datetime.fromisoformat(messages_to_summarize[-1]["timestamp"])
             
+            # Extract preferences from messages (for importance scoring)
+            from utils.importance_scorer import ImportanceScorer
+            preferences = ImportanceScorer.extract_preferences(
+                [{"role": m["role"], "content": m["content"]} for m in messages_to_summarize]
+            )
+            
             # Create summary using Claude
             summary_text = await self.summarizer.summarize_messages(
                 messages=[{"role": m["role"], "content": m["content"]} for m in messages_to_summarize],
                 user_name=None
             )
             
-            # Store summary in database
+            # Add preferences to summary if found
+            if preferences:
+                summary_text += f"\n\nUser preferences mentioned: {', '.join(preferences[:3])}"
+            
+            # Calculate importance score (higher if preferences found)
+            base_importance = 0.5
+            if preferences:
+                base_importance = 0.7  # Preferences are important
+            if any("prefer" in msg.get("content", "").lower() or "like" in msg.get("content", "").lower() 
+                   for msg in messages_to_summarize):
+                base_importance = max(base_importance, 0.8)  # Very important
+            
+            # Store summary in database with importance score
             self.memory_manager.create_summary(
                 user_id=user_id,
                 channel_id=channel_id,
                 summary_text=summary_text,
                 message_count=len(messages_to_summarize),
                 start_timestamp=start_time,
-                end_timestamp=end_time
+                end_timestamp=end_time,
+                importance_score=base_importance
             )
             
             print(f"[INFO] Summarized {len(messages_to_summarize)} messages for user {user_id}")
@@ -202,14 +222,14 @@ class AIBootBot(commands.Bot):
             traceback.print_exc()
     
     async def _cleanup_old_conversations(self):
-        """Background task to clear conversation context after 30 minutes of inactivity"""
+        """Background task to clear conversation context and manage memory decay"""
         while True:
             try:
-                await asyncio.sleep(300)  # Check every 5 minutes
+                await asyncio.sleep(3600)  # Check every hour
                 now = datetime.now()
                 timeout = timedelta(minutes=self.config.get("context_timeout_minutes", 30))
                 
-                # Find and remove old conversations
+                # Find and remove old conversations from in-memory cache
                 channels_to_remove = []
                 for channel_id, conv_data in self.conversations.items():
                     if now - conv_data['last_activity'] > timeout:
@@ -218,6 +238,40 @@ class AIBootBot(commands.Bot):
                 for channel_id in channels_to_remove:
                     del self.conversations[channel_id]
                     print(f"Cleared conversation context for channel {channel_id} (inactive)")
+                
+                # Memory decay: merge/drop old summaries
+                if self.memory_manager:
+                    try:
+                        # Get all unique user/channel combinations
+                        conn = sqlite3.connect(self.memory_manager.db_path)
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            SELECT DISTINCT user_id, channel_id FROM summaries
+                        """)
+                        user_channels = cursor.fetchall()
+                        conn.close()
+                        
+                        # Process each user/channel
+                        total_processed = 0
+                        for user_id, channel_id in user_channels:
+                            processed = self.memory_manager.merge_old_summaries(
+                                user_id=user_id,
+                                channel_id=channel_id,
+                                max_age_days=90,  # Process summaries older than 90 days
+                                min_importance=0.3
+                            )
+                            total_processed += processed
+                        
+                        if total_processed > 0:
+                            print(f"[INFO] Memory decay: Processed {total_processed} old summaries")
+                        
+                        # Clean up old messages (but keep important ones)
+                        self.memory_manager.cleanup_old_messages(
+                            days=60,  # Clean messages older than 60 days
+                            min_importance=0.4  # Keep important messages
+                        )
+                    except Exception as e:
+                        print(f"[ERROR] Error in memory decay cleanup: {e}")
             
             except Exception as e:
                 print(f"Error in cleanup task: {e}")
