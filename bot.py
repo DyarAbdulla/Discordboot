@@ -193,9 +193,16 @@ class AIBootBot(commands.Bot):
             return
         
         # Check if message is a command (starts with prefix)
-        if message.content.startswith(self.config.get("prefix", "!")):
+        prefix = self.config.get("prefix", "!")
+        if message.content.startswith(prefix):
             # Let commands handle it
-            await self.process_commands(message)
+            print(f"[DEBUG] Processing command: {message.content}")
+            try:
+                await self.process_commands(message)
+            except Exception as e:
+                print(f"[ERROR] Error processing command: {e}")
+                import traceback
+                traceback.print_exc()
             return
         
         # Check if bot is mentioned or message is a DM
@@ -485,6 +492,29 @@ class AIBootBot(commands.Bot):
             pass
         
         await ctx.send(embed=embed)
+    
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
+        """Handle command errors"""
+        # Ignore unknown commands silently
+        if isinstance(error, commands.CommandNotFound):
+            return
+        
+        # Handle missing required arguments
+        if isinstance(error, commands.MissingRequiredArgument):
+            prefix = self.config.get("prefix", "!")
+            await ctx.send(f"❌ Missing required argument! Use `{prefix}help` for usage.")
+            return
+        
+        # Handle other command errors
+        print(f"[ERROR] Command error: {error}")
+        import traceback
+        traceback.print_exc()
+        
+        # Send user-friendly error message
+        try:
+            await ctx.send("❌ An error occurred while processing that command. Please try again!")
+        except:
+            pass  # If we can't send message, ignore
     
     async def close(self):
         """Called when bot is shutting down"""
