@@ -386,7 +386,7 @@ class AIBootBot(commands.Bot):
         
         # Show AI mode and stats
         if self.use_claude and self.claude_handler:
-            mode = "Claude AI (claude-haiku-4-20250514)"
+            mode = "Claude AI (claude-3-5-haiku-20241022)"
             stats = self.claude_handler.get_stats()
             embed.add_field(
                 name="AI Mode",

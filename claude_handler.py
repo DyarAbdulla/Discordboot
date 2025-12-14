@@ -23,7 +23,7 @@ class ClaudeHandler:
         
         # Initialize Anthropic async client
         self.client = AsyncAnthropic(api_key=api_key)
-        self.model = "claude-haiku-4-20250514"  # Faster and cheaper than Sonnet
+        self.model = "claude-3-5-haiku-20241022"  # Faster and cheaper than Sonnet
         
         # System prompt for friendly, helpful personality
         self.system_prompt = (
