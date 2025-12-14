@@ -18,8 +18,8 @@ class ImportanceScorer:
     PREFERENCE_KEYWORDS = [
         "prefer", "preference", "like", "dislike", "favorite", "favourite",
         "always", "never", "usually", "typically", "always want",
-        "my name is", "i am", "i'm", "call me", "i go by",
-        "i speak", "language", "i use", "i work with"
+        "my name is", "i am", "i'm", "call me", "i go by", "name is",
+        "i speak", "language", "i use", "i work with", "remember that"
     ]
     
     CRITICAL_KEYWORDS = [

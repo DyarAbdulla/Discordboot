@@ -365,6 +365,7 @@ class AIBootBot(commands.Bot):
         # Show typing indicator while AI is thinking
         async with message.channel.typing():
             try:
+
                 # Clean message content (remove mention)
                 content = message.content
                 if bot_mentioned:
@@ -386,11 +387,26 @@ class AIBootBot(commands.Bot):
                     return
                 
                 if self.memory_manager:
+                    # Check if this is a name/preference statement for higher importance
+                    content_lower = content.lower()
+                    is_preference = any(keyword in content_lower for keyword in [
+                        "my name is", "i am", "i'm", "call me", "prefer", "like", "remember"
+                    ])
+                    
+                    # Calculate importance score if it's a preference
+                    importance_score = None
+                    if is_preference:
+                        from utils.importance_scorer import ImportanceScorer
+                        message_dict = {"role": "user", "content": content}
+                        importance_score = ImportanceScorer.score_message(message_dict, is_user_message=True)
+                        print(f"[INFO] High importance message detected (score: {importance_score:.2f}): {content[:50]}...")
+                    
                     self.memory_manager.add_message(
                         user_id=user_id,
                         channel_id=channel_id,
                         role="user",
-                        content=content
+                        content=content,
+                        importance_score=importance_score  # Will auto-calculate if None
                     )
                 
                 # Get conversation context from database (summaries + recent messages)
@@ -478,34 +494,56 @@ class AIBootBot(commands.Bot):
                             maxlen=max_context
                         )
                 
-                # Send response
-                await message.reply(response_text)
-                
-                # Add reaction to user's message
-                reaction_emoji = get_reaction(content)
+                # Send response (only once)
+                response_sent = False
                 try:
-                    await message.add_reaction(reaction_emoji)
-                except:
-                    pass  # Ignore if reaction fails
+                    await message.reply(response_text)
+                    response_sent = True
+                except Exception as send_error:
+                    print(f"[ERROR] Failed to send response: {send_error}")
+                    # Try sending without reply
+                    try:
+                        await message.channel.send(response_text)
+                        response_sent = True
+                    except:
+                        pass
                 
-                # Update statistics
-                self.message_count += 1
-                
-                # Log conversation
-                if self.config.get("enable_logging", True):
-                    self._log_message(message, response_text, used_claude)
+                # Only continue if response was sent successfully
+                if response_sent:
+                    # Add reaction to user's message
+                    reaction_emoji = get_reaction(content)
+                    try:
+                        await message.add_reaction(reaction_emoji)
+                    except:
+                        pass  # Ignore if reaction fails
+                    
+                    # Update statistics
+                    self.message_count += 1
+                    
+                    # Log conversation
+                    if self.config.get("enable_logging", True):
+                        try:
+                            self._log_message(message, response_text, used_claude)
+                        except:
+                            pass  # Ignore logging errors
             
             except Exception as e:
                 print(f"[ERROR] Error processing message: {e}")
                 import traceback
                 traceback.print_exc()
-                # Try fallback response using keyword matching
+                # Only send fallback if we haven't sent a response yet
+                # Check if response was already sent by checking if exception happened after response
                 try:
+                    # Try fallback response using keyword matching
                     fallback = find_response(message.content)
                     await message.channel.send(fallback)
                 except Exception as fallback_error:
                     print(f"[ERROR] Fallback also failed: {fallback_error}")
-                    await message.channel.send("I'm having some technical difficulties. Please try again in a moment!")
+                    # Last resort - only if nothing was sent
+                    try:
+                        await message.channel.send("I'm having some technical difficulties. Please try again in a moment!")
+                    except:
+                        pass  # If even this fails, give up
     
     def _log_message(self, message: discord.Message, response: str, used_claude: bool):
         """Log conversation to file"""
