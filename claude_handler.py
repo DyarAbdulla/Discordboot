@@ -66,15 +66,51 @@ class ClaudeHandler:
             system_prompt = self.system_prompt
             
             # Add summaries (long-term memory) to system prompt
+            # PREVENT OVERFLOW: Truncate summaries if they're too long
             if summaries:
-                system_prompt += "\n\nPrevious conversation summaries (for context):\n"
-                for summary in summaries:
-                    system_prompt += f"- {summary}\n"
-                system_prompt += "\nUse these summaries to remember past conversations, but focus on the current conversation."
+                if TOKEN_COUNTER_AVAILABLE:
+                    # Estimate base system prompt tokens
+                    base_tokens = TokenCounter.estimate_tokens(system_prompt)
+                    
+                    # Truncate summaries to fit (reserve tokens for user name and messages)
+                    max_summary_tokens = 2000  # Limit summaries to ~2000 tokens
+                    truncated_summaries = TokenCounter.truncate_summaries_to_fit(
+                        summaries=summaries,
+                        max_tokens=max_summary_tokens,
+                        reserve_tokens=100
+                    )
+                else:
+                    # Fallback: just limit number of summaries
+                    truncated_summaries = summaries[:5]  # Max 5 summaries
+                
+                if truncated_summaries:
+                    system_prompt += "\n\nPrevious conversation summaries (for context):\n"
+                    for summary in truncated_summaries:
+                        system_prompt += f"- {summary}\n"
+                    system_prompt += "\nUse these summaries to remember past conversations, but focus on the current conversation."
             
             # Add user name to system prompt if provided
             if user_name:
                 system_prompt += f"\n\nThe user you're talking to is: {user_name}"
+            
+            # PREVENT OVERFLOW: Truncate messages if they exceed token limit
+            # Claude's context window is ~200k tokens, but we'll use a safer limit
+            max_context_tokens = 100000  # Safe limit for Claude
+            
+            if TOKEN_COUNTER_AVAILABLE:
+                system_tokens = TokenCounter.estimate_tokens(system_prompt)
+                messages_tokens = TokenCounter.estimate_messages_tokens(messages)
+                
+                # If messages exceed limit, truncate oldest messages
+                if messages_tokens + system_tokens > max_context_tokens:
+                    reserve_tokens = system_tokens + 500  # Reserve for system + response
+                    messages = TokenCounter.truncate_messages_to_fit(
+                        messages=messages,
+                        max_tokens=max_context_tokens,
+                        system_prompt_tokens=0,  # Already accounted
+                        reserve_tokens=reserve_tokens
+                    )
+                    print(f"[WARNING] Truncated messages to prevent overflow. Using {len(messages)} messages.")
             
             # Call Claude API (async)
             response = await self.client.messages.create(

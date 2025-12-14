@@ -322,8 +322,14 @@ class AIBootBot(commands.Bot):
                     return
                 
                 # Store user message in database (persistent memory)
+                # PER-USER ISOLATION: Each user has separate memory
                 user_id = str(message.author.id)
                 channel_id = str(message.channel.id)
+                
+                # Validate user_id for security (prevent injection)
+                if not user_id or len(user_id) > 50:
+                    print(f"[ERROR] Invalid user_id: {user_id}")
+                    return
                 
                 if self.memory_manager:
                     self.memory_manager.add_message(

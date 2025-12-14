@@ -85,8 +85,11 @@ class MemoryManager:
         """
         Add a message to the conversation history
         
+        PER-USER ISOLATION: Messages are stored with user_id and channel_id,
+        ensuring complete isolation between users.
+        
         Args:
-            user_id: Discord user ID
+            user_id: Discord user ID (required for isolation)
             channel_id: Discord channel ID (or DM channel ID)
             role: 'user' or 'assistant'
             content: Message content
@@ -94,13 +97,25 @@ class MemoryManager:
         Returns:
             Message ID
         """
+        # Validate inputs for security
+        if not user_id or not channel_id:
+            raise ValueError("user_id and channel_id are required for memory isolation")
+        
+        if role not in ['user', 'assistant']:
+            raise ValueError("role must be 'user' or 'assistant'")
+        
+        # Ensure user_id and channel_id are strings (prevent SQL injection)
+        user_id = str(user_id)
+        channel_id = str(channel_id)
+        
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # Use parameterized query to prevent SQL injection
         cursor.execute("""
             INSERT INTO conversations (user_id, channel_id, role, content)
             VALUES (?, ?, ?, ?)
-        """, (str(user_id), str(channel_id), role, content))
+        """, (user_id, channel_id, role, content))
         
         message_id = cursor.lastrowid
         conn.commit()
@@ -256,9 +271,12 @@ class MemoryManager:
         """
         Get full conversation context (summaries + recent messages)
         
+        PER-USER ISOLATION: Only returns data for the specified user_id and channel_id.
+        This ensures complete memory isolation between users.
+        
         Args:
-            user_id: Discord user ID
-            channel_id: Discord channel ID
+            user_id: Discord user ID (required for isolation)
+            channel_id: Discord channel ID (required for isolation)
             include_summaries: Whether to include long-term memory summaries
             
         Returns:
@@ -266,10 +284,18 @@ class MemoryManager:
             - messages_list: List of recent messages for API
             - summary_texts: List of summary strings for system context
         """
-        # Get recent messages (short-term memory)
+        # Validate inputs for security
+        if not user_id or not channel_id:
+            raise ValueError("user_id and channel_id are required for memory isolation")
+        
+        # Ensure user_id and channel_id are strings (prevent SQL injection)
+        user_id = str(user_id)
+        channel_id = str(channel_id)
+        
+        # Get recent messages (short-term memory) - ISOLATED BY USER+CHANNEL
         messages = self.get_recent_messages(user_id, channel_id)
         
-        # Get summaries (long-term memory)
+        # Get summaries (long-term memory) - ISOLATED BY USER+CHANNEL
         summaries = []
         if include_summaries:
             summaries = self.get_summaries(user_id, channel_id)
