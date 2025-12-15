@@ -88,6 +88,17 @@ except Exception as e:
     traceback.print_exc()
     RESPONSE_TRACKER_AVAILABLE = False
 
+# Import statistics tracker
+try:
+    from utils.statistics_tracker import StatisticsTracker
+    STATISTICS_TRACKER_AVAILABLE = True
+    print("[OK] Statistics tracker module imported successfully")
+except Exception as e:
+    print(f"[ERROR] Warning: Statistics tracker not available: {e}")
+    import traceback
+    traceback.print_exc()
+    STATISTICS_TRACKER_AVAILABLE = False
+
 
 class AIBootBot(commands.Bot):
     """Main bot class for AI Boot with Claude AI integration"""
@@ -204,6 +215,18 @@ class AIBootBot(commands.Bot):
             except Exception as e:
                 print(f"[ERROR] Failed to initialize response tracker: {e}")
                 self.response_tracker = None
+        
+        # Initialize statistics tracker
+        self.statistics_tracker = None
+        if STATISTICS_TRACKER_AVAILABLE:
+            try:
+                self.statistics_tracker = StatisticsTracker(
+                    db_path="statistics.db"
+                )
+                print("[OK] Statistics tracker initialized")
+            except Exception as e:
+                print(f"[ERROR] Failed to initialize statistics tracker: {e}")
+                self.statistics_tracker = None
         
         # Start background task to clean old conversations
         self.cleanup_task = None
@@ -1265,11 +1288,14 @@ class AIBootBot(commands.Bot):
             print(f"[WARNING] Could not get application info: {e}")
             self.owner_id = None
         
-        # Start webhook server
-        try:
-            asyncio.create_task(self._start_webhook_server())
-        except Exception as e:
-            print(f"[WARNING] Could not start webhook server: {e}")
+        # Start webhook server (if method exists)
+        if hasattr(self, '_start_webhook_server'):
+            try:
+                asyncio.create_task(self._start_webhook_server())
+            except Exception as e:
+                print(f"[WARNING] Could not start webhook server: {e}")
+        else:
+            print("[INFO] Webhook server method not available, skipping")
         
         # Start daily backup scheduler
         try:
