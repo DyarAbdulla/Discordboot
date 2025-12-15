@@ -1595,8 +1595,10 @@ class AIBootBot(commands.Bot):
                     )
                     
                     # Check if this is a follow-up question (within 2 minutes)
+                    # Initialize variables first to avoid UnboundLocalError
                     is_follow_up = False
                     follow_up_context = None
+                    
                     if api_messages and len(api_messages) > 0:
                         # Get last message timestamp
                         recent_messages = self.memory_manager.get_recent_messages(
@@ -1640,6 +1642,9 @@ class AIBootBot(commands.Bot):
                     api_messages.append({"role": "user", "content": content})
                     summary_texts = []
                     conv_data['last_activity'] = datetime.now()
+                    # Initialize follow-up variables for fallback path
+                    is_follow_up = False
+                    follow_up_context = None
                 
                 # Check cache first for common questions or identical questions
                 cache_key = None
