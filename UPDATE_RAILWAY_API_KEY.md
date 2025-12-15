@@ -1,8 +1,9 @@
 # Update Railway API Key - URGENT
 
-## Steps to Update
+## New API Key
+**IMPORTANT:** Copy your new API key from the message you sent. Do NOT paste it in this file or commit it to GitHub.
 
-**IMPORTANT:** Copy your new API key from the message you sent. Do NOT paste it in this file.
+## Steps to Update
 
 1. **Go to Railway Dashboard**
    - Visit: https://railway.app
@@ -37,3 +38,12 @@
 - The API key is only stored in Railway environment variables
 - After updating, the bot will automatically restart
 - If you see "Static Responses" mode, the API key is not being loaded correctly
+
+## New Feature: Image Rate Limiting
+
+The bot now limits image analysis to **2 images per 24 hours per user** to manage API costs.
+
+- Each user can analyze 2 images every 24 hours
+- The limit resets automatically after 24 hours from the first image
+- Users will see a friendly error message when the limit is reached
+- Error messages are shown in the user's detected language (English, Kurdish, Arabic)

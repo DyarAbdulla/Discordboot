@@ -201,6 +201,10 @@ class AIBootBot(commands.Bot):
         self.rate_limits = defaultdict(list)
         self.rate_limit_per_minute = self.config.get("rate_limit_per_minute", 5)
         
+        # Image rate limiting: {user_id: [timestamps]} - 2 images per 24 hours
+        self.image_requests = defaultdict(list)
+        self.image_limit_per_24h = 2
+        
         # Bot statistics
         self.start_time = datetime.now()
         self.message_count = 0
@@ -525,6 +529,39 @@ class AIBootBot(commands.Bot):
         except Exception as e:
             print(f"[ERROR] Error in error alert check: {e}")
     
+    def _check_image_rate_limit(self, user_id: int) -> tuple[bool, int, Optional[datetime]]:
+        """
+        Check if user has exceeded image analysis limit (2 per 24 hours)
+        
+        Args:
+            user_id: Discord user ID
+            
+        Returns:
+            Tuple of (is_allowed, remaining_count, next_reset_time)
+            - is_allowed: True if user can send image, False if limit exceeded
+            - remaining_count: Number of images user can still send
+            - next_reset_time: When the oldest request will expire (24h from oldest)
+        """
+        now = datetime.now()
+        user_requests = self.image_requests[user_id]
+        
+        # Remove requests older than 24 hours
+        cutoff_time = now - timedelta(hours=24)
+        user_requests[:] = [ts for ts in user_requests if ts > cutoff_time]
+        
+        # Check if limit exceeded
+        if len(user_requests) >= self.image_limit_per_24h:
+            # Find when the oldest request will expire
+            if user_requests:
+                oldest_request = min(user_requests)
+                next_reset = oldest_request + timedelta(hours=24)
+                return False, 0, next_reset
+            return False, 0, None
+        
+        # User can send image
+        remaining = self.image_limit_per_24h - len(user_requests)
+        return True, remaining, None
+    
     async def _handle_image_analysis(self, message: discord.Message, image_attachments: List[discord.Attachment]):
         """
         Handle image analysis requests
@@ -542,6 +579,74 @@ class AIBootBot(commands.Bot):
                 await message.reply(embed=embed)
             else:
                 await message.reply("❌ Image analysis not available!")
+            return
+        
+        # Check image rate limit (2 per 24 hours)
+        user_id = message.author.id
+        is_allowed, remaining, next_reset = self._check_image_rate_limit(user_id)
+        
+        if not is_allowed:
+            # Detect language for error message
+            detected_language = 'en'
+            kurdish_dialect = None
+            if KURDISH_DETECTOR_AVAILABLE and message.content:
+                lang_result = KurdishDetector.detect_language(message.content)
+                detected_language = lang_result[0]
+                if detected_language == 'ku':
+                    kurdish_result = KurdishDetector.detect_kurdish(message.content)
+                    if kurdish_result:
+                        kurdish_dialect, _ = kurdish_result
+            
+            # Create user-friendly error message
+            if next_reset:
+                time_until_reset = next_reset - datetime.now()
+                hours = int(time_until_reset.total_seconds() / 3600)
+                minutes = int((time_until_reset.total_seconds() % 3600) / 60)
+                
+                if detected_language == 'ku':
+                    if kurdish_dialect == 'Sorani':
+                        error_msg = (
+                            f"ببورە، سنووری وێنەت تێپەڕیوە! تۆ دەتوانیت تەنها ٢ وێنە لە ٢٤ کاتژمێردا بنێریت.\n"
+                            f"تکایە دواتر هەوڵ بدەوە لە {hours} کاتژمێر و {minutes} خولەک."
+                        )
+                    else:
+                        error_msg = (
+                            f"Bibûre, sînûra wêneyê te têpêriye! Tu tenê dikarî 2 wêne di 24 saetan de bişînî.\n"
+                            f"Tika duar hewl bide li {hours} saetan û {minutes} deqeyan."
+                        )
+                elif detected_language == 'ar':
+                    error_msg = (
+                        f"عذراً، لقد تجاوزت حد الصور! يمكنك إرسال صورتين فقط كل 24 ساعة.\n"
+                        f"يرجى المحاولة مرة أخرى بعد {hours} ساعة و {minutes} دقيقة."
+                    )
+                else:
+                    error_msg = (
+                        f"Sorry, you've reached your image analysis limit! "
+                        f"You can only analyze 2 images per 24 hours.\n"
+                        f"Please try again in {hours} hour(s) and {minutes} minute(s)."
+                    )
+            else:
+                if detected_language == 'ku':
+                    if kurdish_dialect == 'Sorani':
+                        error_msg = "ببورە، سنووری وێنەت تێپەڕیوە! تۆ دەتوانیت تەنها ٢ وێنە لە ٢٤ کاتژمێردا بنێریت."
+                    else:
+                        error_msg = "Bibûre, sînûra wêneyê te têpêriye! Tu tenê dikarî 2 wêne di 24 saetan de bişînî."
+                elif detected_language == 'ar':
+                    error_msg = "عذراً، لقد تجاوزت حد الصور! يمكنك إرسال صورتين فقط كل 24 ساعة."
+                else:
+                    error_msg = (
+                        "Sorry, you've reached your image analysis limit! "
+                        "You can only analyze 2 images per 24 hours."
+                    )
+            
+            if EMBED_HELPER_AVAILABLE:
+                embed = EmbedHelper.create_error_embed(
+                    title="⚠️ Image Limit Reached",
+                    description=error_msg
+                )
+                await message.reply(embed=embed)
+            else:
+                await message.reply(f"⚠️ {error_msg}")
             return
         
         try:
@@ -664,7 +769,10 @@ class AIBootBot(commands.Bot):
                             response_with_info = f"**Analyzed {len(image_urls)} images:**\n\n{response_text}"
                         await message.reply(response_with_info)
                     
+                    # Track image request (only count once per message, regardless of number of images)
+                    self.image_requests[user_id].append(datetime.now())
                     print(f"[OK] Image analysis successful: {len(image_urls)} image(s), {tokens_used} tokens")
+                    print(f"[INFO] Image request tracked for user {user_id}. Remaining: {remaining - 1} images in 24h")
                 else:
                     error_msg = result.get("error", "Unknown error")
                     if EMBED_HELPER_AVAILABLE:
@@ -1190,6 +1298,19 @@ class AIBootBot(commands.Bot):
                 for channel_id in channels_to_remove:
                     del self.conversations[channel_id]
                     print(f"Cleared conversation context for channel {channel_id} (inactive)")
+                
+                # Clean up old image requests (older than 24 hours)
+                cutoff_time = now - timedelta(hours=24)
+                users_to_clean = []
+                for user_id, timestamps in self.image_requests.items():
+                    # Remove old timestamps
+                    self.image_requests[user_id] = [ts for ts in timestamps if ts > cutoff_time]
+                    # Remove user entry if no timestamps left
+                    if not self.image_requests[user_id]:
+                        users_to_clean.append(user_id)
+                
+                for user_id in users_to_clean:
+                    del self.image_requests[user_id]
                 
                 # Memory decay: merge/drop old summaries
                 if self.memory_manager:
