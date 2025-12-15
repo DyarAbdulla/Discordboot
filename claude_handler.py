@@ -260,8 +260,9 @@ class ClaudeHandler:
                     print(f"[ERROR] Claude API call failed (attempt {attempt + 1}/{max_retries}): {error_type}: {error_msg}")
                     
                     # Don't retry on certain errors (e.g., invalid API key, rate limit exceeded)
-                    if "authentication" in error_msg.lower() or "api key" in error_msg.lower():
-                        print(f"[ERROR] Authentication error - not retrying")
+                    if "authentication" in error_msg.lower() or "api key" in error_msg.lower() or "401" in error_msg or "403" in error_msg:
+                        print(f"[ERROR] Authentication error - API key may be invalid or expired")
+                        print(f"[ERROR] Please check your CLAUDE_API_KEY in Railway environment variables")
                         break
                     
                     # Continue to next retry attempt

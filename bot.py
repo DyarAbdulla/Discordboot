@@ -139,8 +139,19 @@ class AIBootBot(commands.Bot):
                 self.use_claude = True
                 print("[OK] Claude API handler initialized successfully!")
                 print(f"[OK] Using model: {self.claude_handler.model}")
+            except ValueError as e:
+                # API key not found
+                print(f"[ERROR] Claude API key not configured: {e}")
+                print("[ERROR] Bot will use static responses as fallback")
+                print("[ERROR] To fix: Set CLAUDE_API_KEY in Railway environment variables")
+                self.use_claude = False
+                self.claude_handler = None
             except Exception as e:
+                error_msg = str(e)
                 print(f"[ERROR] Could not initialize Claude API: {e}")
+                if "authentication" in error_msg.lower() or "api key" in error_msg.lower() or "401" in error_msg or "403" in error_msg:
+                    print("[ERROR] API key appears to be invalid or expired")
+                    print("[ERROR] Please check your CLAUDE_API_KEY in Railway environment variables")
                 import traceback
                 traceback.print_exc()
                 print("[ERROR] Bot will use static responses as fallback")
