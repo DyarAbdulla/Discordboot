@@ -303,8 +303,41 @@ class AIBootBot(commands.Bot):
     
     async def setup_hook(self):
         """Called when bot is starting up"""
+        # Get application info to find owner
+        try:
+            app_info = await self.application_info()
+            if app_info and app_info.owner:
+                self.owner_id = app_info.owner.id
+                print(f"[OK] Bot owner: {app_info.owner.name} (ID: {self.owner_id})")
+        except Exception as e:
+            print(f"[WARNING] Could not get application info: {e}")
+            self.owner_id = None
+        
         # Start background task to clean old conversations
         self.cleanup_task = asyncio.create_task(self._cleanup_old_conversations())
+        
+        # Start webhook server (if method exists)
+        if hasattr(self, '_start_webhook_server'):
+            try:
+                asyncio.create_task(self._start_webhook_server())
+            except Exception as e:
+                print(f"[WARNING] Could not start webhook server: {e}")
+        else:
+            print("[INFO] Webhook server method not available, skipping")
+        
+        # Start daily backup scheduler
+        try:
+            asyncio.create_task(self._backup_scheduler())
+        except Exception as e:
+            print(f"[WARNING] Could not start backup scheduler: {e}")
+        
+        # Reset monthly budget alerts if it's a new month
+        if self.statistics_tracker:
+            try:
+                self.statistics_tracker.reset_monthly_alerts_if_needed()
+                print("[OK] Monthly budget alerts checked/reset")
+            except Exception as e:
+                print(f"[WARNING] Could not reset monthly budget alerts: {e}")
         
         # Load slash commands cog
         try:
@@ -1303,23 +1336,13 @@ class AIBootBot(commands.Bot):
         except Exception as e:
             print(f"[WARNING] Could not start backup scheduler: {e}")
         
-        # Reset budget alerts at start of new month
+        # Reset monthly budget alerts if it's a new month
         if self.statistics_tracker:
             try:
-                # Check if it's a new month
-                budget_settings = self.statistics_tracker.get_budget_settings()
-                last_alert_date = budget_settings.get("last_alert_date")
-                
-                if last_alert_date:
-                    last_date = datetime.fromisoformat(last_alert_date) if isinstance(last_alert_date, str) else last_alert_date
-                    now = datetime.now()
-                    
-                    # If last alert was in a different month, reset alerts
-                    if last_date.month != now.month or last_date.year != now.year:
-                        self.statistics_tracker.reset_budget_alerts()
-                        print(f"[OK] Reset budget alerts for new month")
+                self.statistics_tracker.reset_monthly_alerts_if_needed()
+                print("[OK] Monthly budget alerts checked/reset")
             except Exception as e:
-                print(f"[WARNING] Could not reset budget alerts: {e}")
+                print(f"[WARNING] Could not reset monthly budget alerts: {e}")
     
     async def on_ready(self):
         """Called when bot is ready and connected"""
@@ -1785,8 +1808,18 @@ class AIBootBot(commands.Bot):
                         print(f"[DEBUG] Using fallback response after {retry_attempts} retries: {response_text[:50]}...")
                 else:
                     # Claude not available, use static responses
-                    print(f"[DEBUG] Claude not available. use_claude={self.use_claude}, handler={self.claude_handler is not None}")
-                    response_text = find_response(content, detected_language, kurdish_dialect)
+                    print(f"[WARNING] Claude not available. use_claude={self.use_claude}, handler={self.claude_handler is not None}")
+                    print(f"[WARNING] Claude API Key present: {bool(os.getenv('CLAUDE_API_KEY'))}")
+                    print(f"[WARNING] CLAUDE_AVAILABLE: {CLAUDE_AVAILABLE}")
+                    # Try to provide a helpful response even without Claude
+                    if detected_language == 'ku':
+                        response_text = "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن بە AI. تکایە دواتر هەوڵ بدەوە یان بە زمانی ئینگلیزی بپرسە."
+                    else:
+                        response_text = (
+                            "I'm currently experiencing issues connecting to the AI service. "
+                            "Please try again in a moment, or use `!help` to see available commands. "
+                            "If this persists, the Claude API key may need to be configured."
+                        )
                     model_used = "static_fallback"
                     self.fallback_responses += 1
                 
