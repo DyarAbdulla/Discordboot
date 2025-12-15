@@ -521,37 +521,95 @@ class SlashCommands(commands.Cog):
             await interaction.response.send_message(f"❌ Error changing personality: {str(e)}", ephemeral=True)
             print(f"[ERROR] Personality slash command failed: {e}")
     
-    @app_commands.command(name="export", description="Export conversation data to CSV")
-    async def export_slash(self, interaction: discord.Interaction):
-        """Export all conversations to CSV file"""
+    @app_commands.command(name="export", description="Export conversation data")
+    @app_commands.describe(format="Export format")
+    @app_commands.choices(format=[
+        app_commands.Choice(name="CSV", value="csv"),
+        app_commands.Choice(name="JSON", value="json"),
+        app_commands.Choice(name="TXT", value="txt"),
+        app_commands.Choice(name="PDF", value="pdf")
+    ])
+    async def export_slash(
+        self,
+        interaction: discord.Interaction,
+        format: Optional[app_commands.Choice[str]] = None
+    ):
+        """Export all conversations in specified format"""
         if not self.bot.conversation_logger:
             await interaction.response.send_message("❌ Conversation logger not available!", ephemeral=True)
             return
         
+        # Initialize export manager if not exists
+        if not hasattr(self.bot, 'export_manager'):
+            try:
+                from utils.export_manager import ExportManager
+                self.bot.export_manager = ExportManager()
+            except Exception as e:
+                await interaction.response.send_message(
+                    f"❌ Export manager not available: {str(e)}",
+                    ephemeral=True
+                )
+                return
+        
+        export_format = format.value if format else "csv"
+        
         try:
             await interaction.response.defer(ephemeral=True)
             
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"conversation_export_{timestamp}.csv"
+            # Get all conversations
+            conversations = self.bot.conversation_logger.get_all_conversations()
             
-            # Export to CSV
-            filepath = self.bot.conversation_logger.export_to_csv(output_path=filename)
-            
-            # Send file to Discord
-            with open(filepath, 'rb') as f:
-                file = discord.File(f, filename=filename)
+            if not conversations:
                 await interaction.followup.send(
-                    f"✅ **Export Complete!**\n"
-                    f"📁 File: `{filename}`\n"
-                    f"📊 All conversations exported successfully!",
-                    file=file,
+                    "📭 No conversations found to export!",
                     ephemeral=True
                 )
+                return
             
-            print(f"[OK] Exported conversations to {filepath}")
+            # Export using export manager
+            filepath = self.bot.export_manager.export_conversations(
+                conversations=conversations,
+                format=export_format
+            )
+            
+            if not filepath:
+                await interaction.followup.send(
+                    f"❌ Failed to export to {export_format.upper()}. PDF export requires reportlab library.",
+                    ephemeral=True
+                )
+                return
+            
+            # Send file to Discord
+            filename = filepath.split('/')[-1] if '/' in filepath else filepath.split('\\')[-1]
+            with open(filepath, 'rb') as f:
+                file = discord.File(f, filename=filename)
+                
+                if EMBED_HELPER_AVAILABLE:
+                    embed = EmbedHelper.create_success_embed(
+                        title="✅ Export Complete!",
+                        description=(
+                            f"📁 **File**: `{filename}`\n"
+                            f"📊 **Format**: {export_format.upper()}\n"
+                            f"📝 **Conversations**: {len(conversations)}"
+                        )
+                    )
+                    await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+                else:
+                    await interaction.followup.send(
+                        f"✅ **Export Complete!**\n"
+                        f"📁 File: `{filename}`\n"
+                        f"📊 Format: {export_format.upper()}\n"
+                        f"📝 Conversations: {len(conversations)}",
+                        file=file,
+                        ephemeral=True
+                    )
+            
+            print(f"[OK] Exported {len(conversations)} conversations to {filepath}")
         except Exception as e:
-            await interaction.followup.send(f"❌ Error exporting conversations: {str(e)}", ephemeral=True)
+            await interaction.followup.send(
+                f"❌ Error exporting conversations: {str(e)}",
+                ephemeral=True
+            )
             print(f"[ERROR] Export slash command failed: {e}")
             import traceback
             traceback.print_exc()

@@ -120,47 +120,94 @@ class AIBootBot(commands.Bot):
             help_command=None  # We'll create custom help
         )
         
-        # Initialize Claude API handler
-        self.claude_handler = None
-        self.use_claude = False
+        # Initialize Multi-API Manager (Priority 1 - Most Important!)
+        self.api_manager = None
+        try:
+            from utils.api_manager import APIManager, APIProvider
+            print("[INFO] Initializing Multi-API Manager...")
+            self.api_manager = APIManager()
+            print("[OK] Multi-API Manager initialized!")
+            # Keep Claude handler for backward compatibility
+            if APIProvider.CLAUDE in self.api_manager.providers:
+                # Create a wrapper for backward compatibility
+                from claude_handler import ClaudeHandler
+                try:
+                    self.claude_handler = ClaudeHandler()
+                    self.use_claude = True
+                except:
+                    self.claude_handler = None
+                    self.use_claude = False
+            else:
+                self.claude_handler = None
+                self.use_claude = False
+        except Exception as e:
+            print(f"[WARNING] Multi-API Manager not available: {e}")
+            import traceback
+            traceback.print_exc()
+            self.api_manager = None
+            # Fallback to Claude-only mode
+            self.claude_handler = None
+            self.use_claude = False
         
-        # Check if CLAUDE_API_KEY exists in environment
-        claude_key = os.getenv("CLAUDE_API_KEY")
-        if not claude_key:
-            print("[ERROR] CLAUDE_API_KEY not found in .env file!")
-            print("[ERROR] Bot will use static responses")
-        else:
-            print(f"[OK] CLAUDE_API_KEY found (length: {len(claude_key)})")
-        
-        if CLAUDE_AVAILABLE:
-            try:
-                print("[INFO] Attempting to initialize Claude API handler...")
-                self.claude_handler = ClaudeHandler()
-                self.use_claude = True
-                print("[OK] Claude API handler initialized successfully!")
-                print(f"[OK] Using model: {self.claude_handler.model}")
-            except ValueError as e:
-                # API key not found
-                print(f"[ERROR] Claude API key not configured: {e}")
-                print("[ERROR] Bot will use static responses as fallback")
-                print("[ERROR] To fix: Set CLAUDE_API_KEY in Railway environment variables")
+        # Initialize Claude API handler (fallback if API manager not available)
+        if not self.api_manager:
+            claude_key = os.getenv("CLAUDE_API_KEY")
+            if not claude_key:
+                print("[ERROR] CLAUDE_API_KEY not found in .env file!")
+                print("[ERROR] Bot will use static responses")
+            else:
+                print(f"[OK] CLAUDE_API_KEY found (length: {len(claude_key)})")
+            
+            if CLAUDE_AVAILABLE:
+                try:
+                    print("[INFO] Attempting to initialize Claude API handler...")
+                    self.claude_handler = ClaudeHandler()
+                    self.use_claude = True
+                    print("[OK] Claude API handler initialized successfully!")
+                    print(f"[OK] Using model: {self.claude_handler.model}")
+                except ValueError as e:
+                    print(f"[ERROR] Claude API key not configured: {e}")
+                    print("[ERROR] Bot will use static responses as fallback")
+                    self.use_claude = False
+                    self.claude_handler = None
+                except Exception as e:
+                    error_msg = str(e)
+                    print(f"[ERROR] Could not initialize Claude API: {e}")
+                    if "authentication" in error_msg.lower() or "api key" in error_msg.lower():
+                        print("[ERROR] API key appears to be invalid or expired")
+                    import traceback
+                    traceback.print_exc()
+                    self.use_claude = False
+                    self.claude_handler = None
+            else:
+                print("[ERROR] Claude handler module not available - using static responses")
                 self.use_claude = False
                 self.claude_handler = None
-            except Exception as e:
-                error_msg = str(e)
-                print(f"[ERROR] Could not initialize Claude API: {e}")
-                if "authentication" in error_msg.lower() or "api key" in error_msg.lower() or "401" in error_msg or "403" in error_msg:
-                    print("[ERROR] API key appears to be invalid or expired")
-                    print("[ERROR] Please check your CLAUDE_API_KEY in Railway environment variables")
-                import traceback
-                traceback.print_exc()
-                print("[ERROR] Bot will use static responses as fallback")
-                self.use_claude = False
-                self.claude_handler = None  # Ensure it's None
-        else:
-            print("[ERROR] Claude handler module not available - using static responses")
-            self.use_claude = False
-            self.claude_handler = None
+        
+        # Initialize Cache Manager
+        self.cache_manager = None
+        try:
+            from utils.cache import CacheManager
+            cache_enabled = self.config.get("cache_enabled", True)
+            if cache_enabled:
+                cache_max_size = self.config.get("cache_max_size", 1000)
+                self.cache_manager = CacheManager(max_size=cache_max_size)
+                print("[OK] Cache Manager initialized")
+        except Exception as e:
+            print(f"[WARNING] Cache Manager not available: {e}")
+            self.cache_manager = None
+        
+        # Initialize Analytics Tracker
+        self.analytics_tracker = None
+        try:
+            from utils.analytics import AnalyticsTracker
+            analytics_enabled = self.config.get("analytics_enabled", True)
+            if analytics_enabled:
+                self.analytics_tracker = AnalyticsTracker(db_path="analytics.db")
+                print("[OK] Analytics Tracker initialized")
+        except Exception as e:
+            print(f"[WARNING] Analytics Tracker not available: {e}")
+            self.analytics_tracker = None
         
         # Initialize memory manager for persistent storage
         self.memory_manager = None
@@ -192,8 +239,10 @@ class AIBootBot(commands.Bot):
         
         # Conversation context storage: {channel_id: {'messages': deque, 'last_activity': datetime}}
         # This is now a fallback - primary storage is in database
+        # Increased context window to 15 messages
+        max_context = self.config.get("max_context_messages", 15)
         self.conversations = defaultdict(lambda: {
-            'messages': deque(maxlen=8),
+            'messages': deque(maxlen=max_context),
             'last_activity': datetime.now()
         })
         
@@ -363,6 +412,35 @@ class AIBootBot(commands.Bot):
             print(f"[ERROR] Failed to load slash commands cog: {e}")
             import traceback
             traceback.print_exc()
+        
+        # Load API management commands cog
+        try:
+            from cogs.api_commands import setup as api_setup
+            await api_setup(self)
+            print("[OK] API commands cog loaded")
+        except Exception as e:
+            print(f"[WARNING] Failed to load API commands cog: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Load fun commands cog
+        try:
+            from cogs.fun_commands import setup as fun_setup
+            await fun_setup(self)
+            print("[OK] Fun commands cog loaded")
+        except Exception as e:
+            print(f"[WARNING] Failed to load fun commands cog: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Initialize export manager
+        try:
+            from utils.export_manager import ExportManager
+            self.export_manager = ExportManager()
+            print("[OK] Export manager initialized")
+        except Exception as e:
+            print(f"[WARNING] Export manager not available: {e}")
+            self.export_manager = None
         
         # Sync slash commands tree
         try:

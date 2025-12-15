@@ -214,3 +214,4 @@ Auto-translated from Kurdish
 **Made with ❤️ for multilingual communication!**
 
 
+

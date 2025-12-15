@@ -25,7 +25,7 @@ class MemoryManager:
     - summaries: Stores conversation summaries for long-term memory
     """
     
-    def __init__(self, db_path: str = "bot_memory.db", short_term_limit: int = 30):
+    def __init__(self, db_path: str = "bot_memory.db", short_term_limit: int = 15):
         """
         Initialize memory manager
         

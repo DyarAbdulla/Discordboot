@@ -1,11 +1,22 @@
 {
   "prefix": "!",
-  "rate_limit_per_minute": 5,
-  "max_context_messages": 8,
+  "rate_limit_per_minute": 10,
+  "rate_limit_new_users": 5,
+  "rate_limit_premium": 20,
+  "max_context_messages": 15,
   "context_timeout_minutes": 30,
   "enable_logging": true,
   "log_file": "bot.log",
   "memory_db_path": "bot_memory.db",
   "short_term_memory_limit": 30,
-  "summarize_threshold": 50
+  "summarize_threshold": 50,
+  "primary_api": "claude",
+  "enable_fallback": true,
+  "cost_optimization": true,
+  "monthly_budget": 50,
+  "cache_enabled": true,
+  "cache_max_size": 1000,
+  "analytics_enabled": true,
+  "supported_languages": ["en", "ku", "ar", "tr", "fa", "fr", "de", "es", "ru", "zh"],
+  "default_language": "en"
 }
