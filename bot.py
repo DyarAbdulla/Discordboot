@@ -1773,7 +1773,7 @@ class AIBootBot(commands.Bot):
                             except Exception as e:
                                 print(f"[ERROR] Failed to track question: {e}")
                     else:
-                        # API failed after retries, use fallback
+                        # API failed after retries
                         error_msg = result.get('error', 'Unknown error')
                         retry_attempts = result.get('retry_attempts', 0)
                         print(f"[ERROR] Claude API failed after {retry_attempts} retries: {error_msg}")
@@ -1803,25 +1803,31 @@ class AIBootBot(commands.Bot):
                         self.error_count_recent += 1
                         await self._check_error_alerts()
                         
-                        # Use friendly fallback message
-                        response_text = find_response(content, detected_language, kurdish_dialect)
-                        if not response_text or len(response_text) < 10:
-                            # Enhanced fallback message
-                            if detected_language == 'ku':
-                                if kurdish_dialect == 'Sorani':
-                                    response_text = "ببورە، هەندێک کێشە هەیە. تکایە دواتر هەوڵ بدەوە."
+                        # Use Claude's user-friendly error message if available, otherwise use static fallback
+                        if result.get('response') and result.get('user_friendly'):
+                            # Claude provided a user-friendly error message
+                            response_text = result['response']
+                            print(f"[DEBUG] Using Claude's user-friendly error message: {response_text[:50]}...")
+                        else:
+                            # Fallback to static responses only if Claude didn't provide a message
+                            response_text = find_response(content, detected_language, kurdish_dialect)
+                            if not response_text or len(response_text) < 10:
+                                # Enhanced fallback message
+                                if detected_language == 'ku':
+                                    if kurdish_dialect == 'Sorani':
+                                        response_text = "ببورە، هەندێک کێشە هەیە. تکایە دواتر هەوڵ بدەوە."
+                                    else:
+                                        response_text = "Bibûre, hinek kêşe heye. Tika duar hewl bide."
                                 else:
-                                    response_text = "Bibûre, hinek kêşe heye. Tika duar hewl bide."
-                            else:
-                                response_text = (
-                                    "I'm having a bit of trouble right now, but I'm still here! "
-                                    "Try asking again in a moment, or rephrase your question. "
-                                    "I'll do my best to help! 😊"
-                                )
+                                    response_text = (
+                                        "I'm having a bit of trouble right now, but I'm still here! "
+                                        "Try asking again in a moment, or rephrase your question. "
+                                        "I'll do my best to help! 😊"
+                                    )
+                            print(f"[DEBUG] Using static fallback response: {response_text[:50]}...")
                         
                         model_used = "static_fallback"
                         self.fallback_responses += 1
-                        print(f"[DEBUG] Using fallback response after {retry_attempts} retries: {response_text[:50]}...")
                 else:
                     # Claude not available, use static responses
                     print(f"[WARNING] Claude not available. use_claude={self.use_claude}, handler={self.claude_handler is not None}")

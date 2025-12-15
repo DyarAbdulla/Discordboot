@@ -1,55 +1,39 @@
-# How to Update Claude API Key in Railway
+# Update Railway API Key - URGENT
 
-## 🔑 Quick Steps
+## Steps to Update
 
-### 1. Go to Railway Dashboard
-1. Open https://railway.app
-2. Select your project: **cooperative-contentment**
-3. Click on **Discordboot** service
+**IMPORTANT:** Copy your new API key from the message you sent. Do NOT paste it in this file.
 
-### 2. Update the API Key
-1. Click on the **"Variables"** tab
-2. Find `CLAUDE_API_KEY` in the list
-3. Click on it to edit
-4. Replace the old value with your new API key (paste your API key here)
-5. Click **"Save"** or **"Update"**
+1. **Go to Railway Dashboard**
+   - Visit: https://railway.app
+   - Open your project: `cooperative-contentment`
+   - Click on the `Discordboot` service
 
-**Note:** Your API key should start with `sk-ant-api03-` and be the full key without any spaces.
+2. **Update Environment Variable**
+   - Click the "Variables" tab
+   - Find `CLAUDE_API_KEY` in the list
+   - Click to edit it
+   - Replace the entire value with the new API key above
+   - Click "Save" or "Update"
 
-### 3. Restart the Bot
-1. Go to **"Deployments"** tab
-2. Click the **"Redeploy"** button (or three dots menu → Redeploy)
-3. Wait for deployment to complete (1-2 minutes)
+3. **Redeploy the Bot**
+   - Go to the "Deployments" tab
+   - Click the three dots (⋯) on the latest deployment
+   - Select "Redeploy"
+   - Wait 1-2 minutes for deployment to complete
 
-### 4. Verify It Works
-1. Check Railway logs for: `[OK] CLAUDE_API_KEY found`
-2. Test in Discord: Send `@AI Boot hello`
-3. Should get AI response, not error message
+4. **Verify It Works**
+   - Check Railway logs for:
+     - `[OK] CLAUDE_API_KEY found`
+     - `[OK] Claude API handler initialized successfully!`
+     - `Mode: Claude AI` (NOT "Static Responses")
+   - Test in Discord:
+     - Send: `@AI Boot What is AI?`
+     - Should get a detailed AI response, NOT "I'm still learning..."
 
-## ✅ Verification Checklist
+## Important Notes
 
-- [ ] API key updated in Railway Variables
-- [ ] Bot redeployed
-- [ ] Logs show `[OK] CLAUDE_API_KEY found`
-- [ ] Bot responds with AI, not error message
-
-## 🔍 If Still Not Working
-
-1. **Check Railway Logs:**
-   - Go to Discordboot → Deployments → View Logs
-   - Look for errors about API key
-
-2. **Verify API Key Format:**
-   - Should start with `sk-ant-api03-`
-   - Should be the full key (no spaces)
-
-3. **Check Environment Variables:**
-   - Make sure `CLAUDE_API_KEY` is set (not `ANTHROPIC_API_KEY`)
-   - Make sure there are no extra spaces
-
-## 📝 Notes
-
-- Railway automatically restarts the bot when you update variables
-- But sometimes you need to manually redeploy
-- The API key is secure and hidden in Railway (shown as `********`)
-
+- **DO NOT** commit the API key to GitHub
+- The API key is only stored in Railway environment variables
+- After updating, the bot will automatically restart
+- If you see "Static Responses" mode, the API key is not being loaded correctly
