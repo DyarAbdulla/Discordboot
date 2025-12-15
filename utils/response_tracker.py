@@ -263,3 +263,4 @@ class ResponseTracker:
             return f"{response_time * 1000:.0f}ms"
         return f"{response_time:.1f}s"
 
+

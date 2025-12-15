@@ -211,3 +211,4 @@ class KurdishDetector:
             return random.choice(exprs)
         return ""
 
+
