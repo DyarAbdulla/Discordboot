@@ -1605,7 +1605,7 @@ class AIBootBot(commands.Bot):
                     print(f"[CACHE HIT] Using cached response for: {content[:50]}...")
                 else:
                     # Get user facts for personalization
-                user_facts = []
+                    user_facts = []
                 if self.memory_manager:
                     facts_list = self.memory_manager.get_all_user_facts(user_id, channel_id)
                     user_facts = facts_list
@@ -3733,7 +3733,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="joke")
     async def joke_command(self, ctx: commands.Context):
-        """Tell an AI-generated joke"""
+        # Tell an AI-generated joke
         if not self.use_claude or not self.claude_handler:
             # Fallback to static jokes
             static_jokes = [
@@ -3787,14 +3787,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="story")
     async def story_command(self, ctx: commands.Context, *, topic: Optional[str] = None):
-        """Generate a creative story (Premium feature for longer stories)
-        """Generate a creative story
-        
-        Usage:
-        !story - Random story
-        !story dragons - Story about dragons
-        !story space adventure - Story about space adventure
-        """
+        # Generate a creative story (Premium feature for longer stories). Usage: !story [topic]
         if not self.use_claude or not self.claude_handler:
             await ctx.send("❌ Story generation requires Claude API!")
             return
@@ -3842,7 +3835,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="riddle")
     async def riddle_command(self, ctx: commands.Context):
-        """Share a riddle - use !answer to check your guess"""
+        # Share a riddle - use !answer to check your guess
         if not self.use_claude or not self.claude_handler:
             # Fallback riddles
             fallback_riddles = [
@@ -3911,11 +3904,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="answer")
     async def answer_command(self, ctx: commands.Context, *, guess: str):
-        """Check your riddle answer
-        
-        Usage:
-        !answer keyboard
-        """
+        # Check your riddle answer. Usage: !answer [guess]
         if not hasattr(self, 'riddle_answers') or str(ctx.channel.id) not in self.riddle_answers:
             await ctx.send("❌ No active riddle! Use `!riddle` first.")
             return
@@ -3954,7 +3943,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="fact")
     async def fact_command(self, ctx: commands.Context):
-        """Get a random interesting fact"""
+        # Get a random interesting fact
         if not self.use_claude or not self.claude_handler:
             # Fallback facts
             static_facts = [
@@ -4007,7 +3996,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="quote")
     async def quote_command(self, ctx: commands.Context):
-        """Get an inspirational quote"""
+        # Get an inspirational quote
         if not self.use_claude or not self.claude_handler:
             # Fallback quotes
             static_quotes = [
@@ -4060,12 +4049,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="eightball", aliases=["8ball", "magic8ball"])
     async def eightball_command(self, ctx: commands.Context, *, question: str):
-        """Ask the Magic 8-Ball a question
-        
-        Usage:
-        !eightball Will I have a good day?
-        !eightball Should I learn Python?
-        """
+        # Ask the Magic 8-Ball a question. Usage: !eightball [question]
         responses = [
             "🎱 It is certain.",
             "🎱 Without a doubt.",
@@ -4103,7 +4087,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="trivia")
     async def trivia_command(self, ctx: commands.Context):
-        """Start a trivia quiz game"""
+        # Start a trivia quiz game
         if not self.use_claude or not self.claude_handler:
             await ctx.send("❌ Trivia requires Claude API!")
             return
@@ -4153,12 +4137,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="guess")
     async def guess_command(self, ctx: commands.Context, answer: str):
-        """Guess the trivia answer
-        
-        Usage:
-        !guess A
-        !guess B
-        """
+        # Guess the trivia answer. Usage: !guess [answer]
         if not hasattr(self, 'trivia_answers') or str(ctx.channel.id) not in self.trivia_answers:
             await ctx.send("❌ No active trivia question! Use `!trivia` first.")
             return
@@ -4191,7 +4170,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="wouldyourather", aliases=["wyr", "would_you_rather"])
     async def wouldyourather_command(self, ctx: commands.Context):
-        """Get a "Would You Rather" question"""
+        # Get a "Would You Rather" question
         if not self.use_claude or not self.claude_handler:
             # Fallback questions
             fallback_wyr = [
@@ -4244,7 +4223,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="dadjoke")
     async def dadjoke_command(self, ctx: commands.Context):
-        """Get a dad joke"""
+        # Get a dad joke
         if not self.use_claude or not self.claude_handler:
             # Fallback dad jokes
             dad_jokes = [
@@ -4300,12 +4279,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="roast")
     async def roast_command(self, ctx: commands.Context, member: Optional[discord.Member] = None):
-        """Friendly roast someone (all in good fun!)
-        
-        Usage:
-        !roast @user
-        !roast - Roast yourself
-        """
+        # Friendly roast someone (all in good fun!). Usage: !roast @user or !roast
         target = member if member else ctx.author
         
         # Don't roast the bot
@@ -4369,15 +4343,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="translate", aliases=["tr", "trans"])
     async def translate_command(self, ctx: commands.Context, *, text: Optional[str] = None):
-        """Translate text to English or specified language
-        
-        Usage:
-        !translate Hello world - Auto-detect and translate to English
-        !translate kurdish Hello world - Translate to Kurdish
-        !translate arabic Hello world - Translate to Arabic
-        !translate turkish Hello world - Translate to Turkish
-        !translate english سڵاو - Translate to English
-        """
+        # Translate text to English or specified language. Usage: !translate [text] or !translate [lang] [text]
         if not text:
             if EMBED_HELPER_AVAILABLE:
                 embed = EmbedHelper.create_error_embed(
@@ -4500,12 +4466,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="detect", aliases=["detectlang", "langdetect"])
     async def detect_command(self, ctx: commands.Context, *, text: Optional[str] = None):
-        """Detect the language of text
-        
-        Usage:
-        !detect Hello world
-        !detect سڵاو
-        """
+        # Detect the language of text. Usage: !detect [text]
         if not text:
             if EMBED_HELPER_AVAILABLE:
                 embed = EmbedHelper.create_error_embed(
@@ -4562,12 +4523,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="kurdish", aliases=["ku", "kurdi"])
     async def kurdish_command(self, ctx: commands.Context, *, text: Optional[str] = None):
-        """Translate text to Kurdish
-        
-        Usage:
-        !kurdish Hello world
-        !kurdish How are you?
-        """
+        # Translate text to Kurdish. Usage: !kurdish [text]
         if not text:
             if EMBED_HELPER_AVAILABLE:
                 embed = EmbedHelper.create_error_embed(
@@ -4584,12 +4540,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="english", aliases=["en"])
     async def english_command(self, ctx: commands.Context, *, text: Optional[str] = None):
-        """Translate text to English
-        
-        Usage:
-        !english سڵاو
-        !english Merhaba
-        """
+        # Translate text to English. Usage: !english [text]
         if not text:
             if EMBED_HELPER_AVAILABLE:
                 embed = EmbedHelper.create_error_embed(
