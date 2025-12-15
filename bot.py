@@ -4607,13 +4607,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="autotranslate", aliases=["autotr", "auto-translate"])
     @commands.has_permissions(manage_messages=True)
     async def autotranslate_command(self, ctx: commands.Context, enable: Optional[str] = None):
-        """Enable/disable auto-translation mode for this server (Admin only)
-        
-        Usage:
-        !autotranslate on - Enable auto-translation
-        !autotranslate off - Disable auto-translation
-        !autotranslate - Show current status
-        """
+        # Enable/disable auto-translation mode for this server (Admin only). Usage: !autotranslate on/off
         if not ctx.guild:
             await ctx.send("❌ This command only works in servers!")
             return
@@ -4667,11 +4661,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="warn")
     @commands.has_permissions(manage_messages=True)
     async def warn_command(self, ctx: commands.Context, member: discord.Member = None, *, reason: Optional[str] = None):
-        """Warn a user (Admin only)
-        
-        Usage:
-        !warn @user [reason]
-        """
+        # Warn a user (Admin only). Usage: !warn @user [reason]
         if not member:
             await ctx.send("❌ Please mention a user to warn!")
             return
@@ -4743,11 +4733,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="mute")
     @commands.has_permissions(manage_messages=True)
     async def mute_command(self, ctx: commands.Context, member: discord.Member = None, duration: Optional[str] = None, *, reason: Optional[str] = None):
-        """Mute a user for a specified time (Admin only)
-        
-        Usage: !mute @user [duration] [reason]
-        Duration formats: minutes (m), hours (h), days (d)
-        """
+        # Mute a user for a specified time (Admin only). Usage: !mute @user [duration] [reason]. Duration: m/h/d
         if not member:
             await ctx.send("❌ Please mention a user to mute!")
             return
@@ -4837,11 +4823,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="ban")
     @commands.has_permissions(ban_members=True)
     async def ban_command(self, ctx: commands.Context, member: discord.Member = None, *, reason: Optional[str] = None):
-        """Ban a user from using the bot (Admin only)
-        
-        Usage:
-        !ban @user [reason]
-        """
+        # Ban a user from using the bot (Admin only). Usage: !ban @user [reason]
         if not member:
             await ctx.send("❌ Please mention a user to ban!")
             return
@@ -4909,12 +4891,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="modlogs")
     @commands.has_permissions(manage_messages=True)
     async def modlogs_command(self, ctx: commands.Context, limit: Optional[int] = 10):
-        """Show moderation logs (Admin only)
-        
-        Usage:
-        !modlogs - Show last 10 actions
-        !modlogs 20 - Show last 20 actions
-        """
+        # Show moderation logs (Admin only). Usage: !modlogs [limit]
         if not ctx.guild:
             await ctx.send("❌ This command only works in servers!")
             return
@@ -4971,13 +4948,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="blacklist")
     @commands.has_permissions(manage_messages=True)
     async def blacklist_command(self, ctx: commands.Context, action: Optional[str] = None, *, word: Optional[str] = None):
-        """Manage blacklist (Admin only)
-        
-        Usage:
-        !blacklist add [word] - Add word to blacklist
-        !blacklist remove [word] - Remove word from blacklist
-        !blacklist list - Show blacklist
-        """
+        # Manage blacklist (Admin only). Usage: !blacklist add/remove [word] or !blacklist list
         if not ctx.guild:
             await ctx.send("❌ This command only works in servers!")
             return
@@ -5019,13 +4990,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="whitelist")
     @commands.has_permissions(manage_messages=True)
     async def whitelist_command(self, ctx: commands.Context, action: Optional[str] = None, member: discord.Member = None):
-        """Manage whitelist (Admin only)
-        
-        Usage:
-        !whitelist add @user - Add user to whitelist
-        !whitelist remove @user - Remove user from whitelist
-        !whitelist list - Show whitelist
-        """
+        # Manage whitelist (Admin only). Usage: !whitelist add/remove @user or !whitelist list
         if not ctx.guild:
             await ctx.send("❌ This command only works in servers!")
             return
@@ -5080,7 +5045,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="permissions", aliases=["perms", "perm"])
     async def permissions_command(self, ctx: commands.Context):
-        """Show your permission level and rate limits"""
+        # Show your permission level and rate limits
         user_id = ctx.author.id
         level = self._get_user_permission_level(user_id, ctx.guild)
         rate_limit = self._get_rate_limit_for_level(level)
@@ -5146,13 +5111,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="setpremium")
     @commands.is_owner()
     async def setpremium_command(self, ctx: commands.Context, member: Optional[discord.Member] = None, action: Optional[str] = None):
-        """Grant or revoke premium access (Owner only)
-        
-        Usage:
-        !setpremium @user add - Grant premium
-        !setpremium @user remove - Remove premium
-        !setpremium list - List premium users
-        """
+        # Grant or revoke premium access (Owner only). Usage: !setpremium @user add/remove or !setpremium list
         if not member and action != 'list':
             await ctx.send("❌ Please mention a user or use `!setpremium list`!")
             return
@@ -5216,25 +5175,13 @@ class AIBootBot(commands.Bot):
             await ctx.send("❌ Usage: `!setpremium @user add` or `!setpremium @user remove` or `!setpremium list`")
     
     def _check_premium_feature(self, user_id: int) -> bool:
-        """
-        Check if user has access to premium features
-        
-        Returns:
-            True if user has premium access
-        """
+        # Check if user has access to premium features. Returns True if user has premium access
         level = self._get_user_permission_level(user_id)
         return level in ['owner', 'premium']
     
     @commands.command(name="teach")
     async def teach_command(self, ctx: commands.Context, *, fact: str):
-        """
-        Teach the bot something about you
-        
-        Usage:
-        !teach My name is John
-        !teach I like programming
-        !teach My favorite color is blue
-        """
+        # Teach the bot something about you. Usage: !teach [fact]
         if not self.memory_manager:
             if EMBED_HELPER_AVAILABLE:
                 embed = EmbedHelper.create_error_embed(
@@ -5361,7 +5308,7 @@ class AIBootBot(commands.Bot):
     # ========== BACKUP COMMANDS ==========
     
     async def _backup_scheduler(self):
-        """Daily backup scheduler"""
+        # Daily backup scheduler
         while True:
             try:
                 # Wait until next backup time (daily at 2 AM)
@@ -5387,15 +5334,7 @@ class AIBootBot(commands.Bot):
                 await asyncio.sleep(3600)  # Wait 1 hour before retrying
     
     async def _perform_backup(self, automatic: bool = False) -> Dict:
-        """
-        Perform database backup
-        
-        Args:
-            automatic: Whether this is an automatic backup
-            
-        Returns:
-            Backup result dictionary
-        """
+        # Perform database backup. Args: automatic (bool). Returns: Backup result dictionary
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_info = {
@@ -5483,7 +5422,7 @@ class AIBootBot(commands.Bot):
             return backup_info
     
     async def _cleanup_old_backups(self):
-        """Remove backups older than retention period"""
+        # Remove backups older than retention period
         try:
             cutoff_date = datetime.now() - timedelta(days=self.backup_retention_days)
             
@@ -5512,7 +5451,7 @@ class AIBootBot(commands.Bot):
             print(f"[ERROR] Backup cleanup failed: {e}")
     
     async def _send_backup_notification(self, backup_info: Dict, success: bool):
-        """Send backup notification to owner"""
+        # Send backup notification to owner
         try:
             owner_id = self.owner_id if hasattr(self, 'owner_id') else None
             if not owner_id:
@@ -5564,12 +5503,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="backup")
     async def backup_command(self, ctx: commands.Context, action: Optional[str] = None):
-        """Perform manual backup or show backup info
-        
-        Usage:
-        !backup now - Create backup now
-        !backup - Show backup info
-        """
+        # Perform manual backup or show backup info. Usage: !backup now or !backup
         if action and action.lower() == 'now':
             # Check permissions (owner or admin)
             if not ctx.author.guild_permissions.administrator and ctx.author.id != self.owner_id:
@@ -5654,11 +5588,7 @@ class AIBootBot(commands.Bot):
     
     @commands.command(name="backups")
     async def backups_command(self, ctx: commands.Context, action: Optional[str] = None):
-        """List available backups
-        
-        Usage:
-        !backups list - List all backups
-        """
+        # List available backups. Usage: !backups list
         if not ctx.author.guild_permissions.administrator and ctx.author.id != self.owner_id:
             await ctx.send("❌ You need administrator permissions to list backups!")
             return
@@ -5722,7 +5652,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="restore")
     @commands.is_owner()
     async def restore_command(self, ctx: commands.Context, backup_id: Optional[str] = None):
-        """Restore database from backup (Owner only). Usage: !restore [backup_id] or !restore latest"""
+        # Restore database from backup (Owner only). Usage: !restore [backup_id] or !restore latest
         if not backup_id:
             await ctx.send("❌ Usage: `!restore [backup_id]` or `!restore latest`\nUse `!backups list` to see available backups.")
             return
@@ -5811,7 +5741,7 @@ class AIBootBot(commands.Bot):
             traceback.print_exc()
     
     async def close(self):
-        """Called when bot is shutting down."""
+        # Called when bot is shutting down
         # Cancel cleanup task
         if self.cleanup_task:
             self.cleanup_task.cancel()
