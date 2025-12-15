@@ -12,6 +12,7 @@ import sqlite3
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
+from typing import Optional
 
 # Load environment variables from .env file FIRST (before importing claude_handler)
 load_dotenv()
@@ -40,6 +41,17 @@ except Exception as e:
     import traceback
     traceback.print_exc()
     MEMORY_AVAILABLE = False
+
+# Import conversation logger for permanent storage
+try:
+    from conversation_logger import ConversationLogger
+    CONVERSATION_LOGGER_AVAILABLE = True
+    print("[OK] Conversation logger module imported successfully")
+except Exception as e:
+    print(f"[ERROR] Warning: Conversation logger not available: {e}")
+    import traceback
+    traceback.print_exc()
+    CONVERSATION_LOGGER_AVAILABLE = False
 
 
 class AIBootBot(commands.Bot):
@@ -108,6 +120,18 @@ class AIBootBot(commands.Bot):
             except Exception as e:
                 print(f"[ERROR] Failed to initialize memory manager: {e}")
                 self.memory_manager = None
+        
+        # Initialize conversation logger for permanent conversation storage
+        self.conversation_logger = None
+        if CONVERSATION_LOGGER_AVAILABLE:
+            try:
+                self.conversation_logger = ConversationLogger(
+                    db_path="conversation_logs.db"
+                )
+                print("[OK] Conversation logger initialized")
+            except Exception as e:
+                print(f"[ERROR] Failed to initialize conversation logger: {e}")
+                self.conversation_logger = None
         
         # Conversation context storage: {channel_id: {'messages': deque, 'last_activity': datetime}}
         # This is now a fallback - primary storage is in database
@@ -443,6 +467,8 @@ class AIBootBot(commands.Bot):
                 # Try Claude API first, fallback to static responses if it fails
                 response_text = None
                 used_claude = False
+                tokens_used = 0
+                model_used = "unknown"
                 
                 # ALWAYS try Claude API if available
                 if self.use_claude and self.claude_handler:
@@ -457,6 +483,8 @@ class AIBootBot(commands.Bot):
                     if result["success"]:
                         response_text = result["response"]
                         used_claude = True
+                        tokens_used = result.get("tokens_used", 0)
+                        model_used = self.claude_handler.model
                         self.claude_responses += 1
                         print(f"[DEBUG] Claude API success! Response length: {len(response_text)}")
                     else:
@@ -466,12 +494,14 @@ class AIBootBot(commands.Bot):
                         print(f"[ERROR] Full result: {result}")
                         # Try static response as fallback instead of generic error
                         response_text = find_response(content)
+                        model_used = "static_fallback"
                         self.fallback_responses += 1
                         print(f"[DEBUG] Using fallback response: {response_text[:50]}...")
                 else:
                     # Claude not available, use static responses
                     print(f"[DEBUG] Claude not available. use_claude={self.use_claude}, handler={self.claude_handler is not None}")
                     response_text = find_response(content)
+                    model_used = "static_fallback"
                     self.fallback_responses += 1
                 
                 # Store bot response in database (persistent memory)
@@ -510,6 +540,22 @@ class AIBootBot(commands.Bot):
                 
                 # Only continue if response was sent successfully
                 if response_sent:
+                    # Log conversation to permanent database
+                    if self.conversation_logger:
+                        try:
+                            self.conversation_logger.log_conversation(
+                                user_id=str(message.author.id),
+                                user_name=message.author.display_name,
+                                channel_id=str(message.channel.id),
+                                user_message=content,
+                                bot_response=response_text,
+                                tokens_used=tokens_used,
+                                model_used=model_used
+                            )
+                            print(f"[OK] Conversation logged: User={message.author.display_name}, Tokens={tokens_used}, Model={model_used}")
+                        except Exception as e:
+                            print(f"[ERROR] Failed to log conversation: {e}")
+                    
                     # Add reaction to user's message
                     reaction_emoji = get_reaction(content)
                     try:
@@ -583,7 +629,10 @@ class AIBootBot(commands.Bot):
                 f"`{prefix}ping` - Check if I'm online\n"
                 f"`{prefix}info` - Bot information\n"
                 f"`{prefix}commands` - List commands\n"
-                f"`{prefix}about` - Bot description & languages"
+                f"`{prefix}about` - Bot description & languages\n"
+                f"`{prefix}export` - Export conversations to CSV\n"
+                f"`{prefix}stats` - Show conversation statistics\n"
+                f"`{prefix}history [user]` - Show conversation history"
             ),
             inline=False
         )
@@ -671,6 +720,9 @@ class AIBootBot(commands.Bot):
             (f"{prefix}info", "Show bot information and stats"),
             (f"{prefix}commands", "List all commands"),
             (f"{prefix}about", "Show bot description and languages"),
+            (f"{prefix}export", "Export all conversations to CSV"),
+            (f"{prefix}stats", "Show conversation statistics"),
+            (f"{prefix}history [user]", "Show conversation history"),
         ]
         
         for cmd, desc in commands_list:
@@ -723,6 +775,178 @@ class AIBootBot(commands.Bot):
             pass
         
         await ctx.send(embed=embed)
+    
+    @commands.command(name="export")
+    async def export_command(self, ctx: commands.Context):
+        """Export all conversations to CSV file"""
+        if not self.conversation_logger:
+            await ctx.send("❌ Conversation logger not available!")
+            return
+        
+        try:
+            await ctx.send("📊 Exporting conversations to CSV... This may take a moment.")
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"conversation_export_{timestamp}.csv"
+            
+            # Export to CSV
+            filepath = self.conversation_logger.export_to_csv(output_path=filename)
+            
+            # Send file to Discord
+            with open(filepath, 'rb') as f:
+                file = discord.File(f, filename=filename)
+                await ctx.send(
+                    f"✅ **Export Complete!**\n"
+                    f"📁 File: `{filename}`\n"
+                    f"📊 All conversations exported successfully!",
+                    file=file
+                )
+            
+            print(f"[OK] Exported conversations to {filepath}")
+        except Exception as e:
+            await ctx.send(f"❌ Error exporting conversations: {str(e)}")
+            print(f"[ERROR] Export failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    @commands.command(name="stats")
+    async def stats_command(self, ctx: commands.Context):
+        """Show conversation statistics"""
+        if not self.conversation_logger:
+            await ctx.send("❌ Conversation logger not available!")
+            return
+        
+        try:
+            stats = self.conversation_logger.get_stats()
+            
+            embed = discord.Embed(
+                title="📊 Conversation Statistics",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(
+                name="📝 Total Conversations",
+                value=f"{stats['total_conversations']:,}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="👥 Total Users",
+                value=f"{stats['total_users']:,}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="💬 Recent (24h)",
+                value=f"{stats['recent_24h']:,}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="🔢 Total Tokens Used",
+                value=f"{stats['total_tokens']:,}",
+                inline=False
+            )
+            
+            # Models used
+            if stats['models_used']:
+                models_text = "\n".join([
+                    f"• **{model}**: {count:,} conversations"
+                    for model, count in stats['models_used'].items()
+                ])
+            else:
+                models_text = "No data yet"
+            
+            embed.add_field(
+                name="🤖 Models Used",
+                value=models_text,
+                inline=False
+            )
+            
+            embed.set_footer(text="Data collected for training purposes")
+            await ctx.send(embed=embed)
+        except Exception as e:
+            await ctx.send(f"❌ Error getting statistics: {str(e)}")
+            print(f"[ERROR] Stats command failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    @commands.command(name="history")
+    async def history_command(self, ctx: commands.Context, *, user: Optional[str] = None):
+        """Show conversation history
+        
+        Usage:
+        !history - Show your recent conversations
+        !history @username - Show conversations for a specific user
+        !history username - Show conversations for a username
+        """
+        if not self.conversation_logger:
+            await ctx.send("❌ Conversation logger not available!")
+            return
+        
+        try:
+            # Determine which user to show history for
+            user_id = None
+            user_name = None
+            
+            if user:
+                # Check if user is a mention
+                if user.startswith("<@") and user.endswith(">"):
+                    # Extract user ID from mention
+                    user_id = user.replace("<@", "").replace("!", "").replace(">", "")
+                else:
+                    # Search by username
+                    user_name = user
+            
+            # If no user specified, show history for command author
+            if not user_id and not user_name:
+                user_id = str(ctx.author.id)
+            
+            # Get history
+            history = self.conversation_logger.get_user_history(
+                user_id=user_id,
+                user_name=user_name,
+                limit=10
+            )
+            
+            if not history:
+                await ctx.send("📭 No conversation history found!")
+                return
+            
+            # Create embed with history
+            display_name = history[0]['user_name'] if history else "Unknown"
+            embed = discord.Embed(
+                title=f"💬 Conversation History - {display_name}",
+                description=f"Showing last {len(history)} conversations",
+                color=discord.Color.blue()
+            )
+            
+            # Show conversations (limit to fit Discord embed limits)
+            for i, conv in enumerate(history[:5], 1):  # Show max 5 in embed
+                timestamp = conv['timestamp'][:19] if len(conv['timestamp']) > 19 else conv['timestamp']
+                user_msg = conv['user_message'][:200] + "..." if len(conv['user_message']) > 200 else conv['user_message']
+                bot_msg = conv['bot_response'][:200] + "..." if len(conv['bot_response']) > 200 else conv['bot_response']
+                
+                embed.add_field(
+                    name=f"💬 Conversation #{i} - {timestamp}",
+                    value=(
+                        f"**User:** {user_msg}\n"
+                        f"**Bot:** {bot_msg}\n"
+                        f"*Tokens: {conv['tokens_used']} | Model: {conv['model_used']}*"
+                    ),
+                    inline=False
+                )
+            
+            if len(history) > 5:
+                embed.set_footer(text=f"Showing 5 of {len(history)} conversations. Use !export for full history.")
+            
+            await ctx.send(embed=embed)
+        except Exception as e:
+            await ctx.send(f"❌ Error getting history: {str(e)}")
+            print(f"[ERROR] History command failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
         """Handle command errors"""

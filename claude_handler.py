@@ -33,15 +33,13 @@ class ClaudeHandler:
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = "claude-3-5-haiku-20241022"  # Faster and cheaper than Sonnet
         
-        # System prompt for friendly, helpful personality
+        # System prompt for direct, helpful personality
         self.system_prompt = (
-            "You are AI Boot, a friendly Discord bot. "
-            "Be helpful, conversational, and fun! "
-            "Keep responses natural and engaging - not robotic. "
-            "Use casual language when appropriate. "
-            "Keep responses concise (under 400 tokens) and Discord-friendly. "
-            "Use emojis occasionally but naturally. "
-            "Be enthusiastic and show genuine interest in conversations!"
+            "You are AI Boot. "
+            "Answer questions directly and completely. "
+            "Don't ask for clarification - just provide helpful answers. "
+            "Be conversational but get to the point quickly. "
+            "Keep responses under 400 tokens and Discord-friendly."
         )
         
         # API usage tracking

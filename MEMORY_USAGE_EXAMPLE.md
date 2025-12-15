@@ -158,3 +158,7 @@ deleted = memory_manager.cleanup_old_messages(days=30)
 ⚠️ **Not Fine-Tuning**: Model is not being trained  
 ✅ **Context Injection**: Past conversations provided as context  
 
+
+
+
+

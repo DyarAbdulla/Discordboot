@@ -42,6 +42,7 @@ wheels/
 *.db-wal
 *.db-shm
 bot_memory.db*
+conversation_logs.db*
 logs/
 bot.log
 api_usage.log

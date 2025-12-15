@@ -1,0 +1,88 @@
+═══════════════════════════════════════════════════════════════
+  RAILWAY POSTGRESQL SETUP - QUICK REFERENCE
+═══════════════════════════════════════════════════════════════
+
+STEP 1: ADD POSTGRESQL TO RAILWAY
+───────────────────────────────────────────────────────────────
+1. Railway Dashboard → Your Project
+2. Click "+ New" → "Database" → "Add PostgreSQL"
+3. Wait for provisioning (~30 seconds)
+
+STEP 2: GET DATABASE_URL
+───────────────────────────────────────────────────────────────
+1. Click PostgreSQL service
+2. Go to "Variables" tab
+3. Copy DATABASE_URL value
+
+STEP 3: ADD TO BOT SERVICE
+───────────────────────────────────────────────────────────────
+1. Click your bot service (not PostgreSQL)
+2. Go to "Variables" tab
+3. Click "+ New Variable"
+4. Name: DATABASE_URL
+5. Value: Paste DATABASE_URL from step 2
+6. Click "Add"
+
+STEP 4: VERIFY
+───────────────────────────────────────────────────────────────
+1. Railway automatically redeploys bot
+2. Check logs: Should see "[OK] Using PostgreSQL database"
+3. Test: Send message to bot, run !stats
+
+═══════════════════════════════════════════════════════════════
+  BACKUP POSTGRESQL
+═══════════════════════════════════════════════════════════════
+
+METHOD 1: Bot Command
+───────────────────────────────────────────────────────────────
+!export
+→ Exports to CSV, sent as Discord file
+
+METHOD 2: Backup Script
+───────────────────────────────────────────────────────────────
+export DATABASE_URL="postgresql://..."
+python backup_postgres.py
+
+METHOD 3: Railway Dashboard
+───────────────────────────────────────────────────────────────
+PostgreSQL Service → "Backups" tab → "Create Backup"
+
+═══════════════════════════════════════════════════════════════
+  MIGRATE FROM SQLITE
+═══════════════════════════════════════════════════════════════
+
+1. Set up PostgreSQL (steps above)
+2. Export SQLite: python -c "from conversation_logger import ConversationLogger; logger = ConversationLogger(); logger.export_to_csv('backup.csv')"
+3. Or use migration script:
+   export DATABASE_URL="postgresql://..."
+   python migrate_sqlite_to_postgres.py
+
+═══════════════════════════════════════════════════════════════
+  TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+Bot still using SQLite?
+→ Check DATABASE_URL is set in Railway environment variables
+
+Connection failed?
+→ Verify PostgreSQL service is running
+→ Check DATABASE_URL format is correct
+
+Data lost after deployment?
+→ If using SQLite: Expected (use PostgreSQL instead)
+→ If using PostgreSQL: Check service is still running
+
+═══════════════════════════════════════════════════════════════
+  FILES
+═══════════════════════════════════════════════════════════════
+
+✅ .gitignore - Database files ignored (won't upload to GitHub)
+✅ .dockerignore - Database files ignored (won't be in Docker)
+✅ migrate_sqlite_to_postgres.py - Migration tool
+✅ backup_postgres.py - Backup tool
+✅ RAILWAY_DEPLOYMENT_GUIDE.md - Full guide
+✅ RAILWAY_POSTGRESQL_SETUP.md - PostgreSQL setup
+
+═══════════════════════════════════════════════════════════════
+
+
