@@ -76,7 +76,7 @@ class ClaudeHandler:
             "For mixed languages, match the user's primary language preference.\n"
             "For error messages, use the user's detected language.\n\n"
             
-            "🇹🇯 KURDISH LANGUAGE GUIDELINES:\n"
+            "🟥⬜🟩☀️ KURDISH LANGUAGE GUIDELINES (Kurdistan Flag: Red-White-Green with Sun):\n"
             "• Sorani (Central Kurdish): Uses Arabic script (ئە, پ, ژ, گ, چ, ۆ, ش)\n"
             "  Example: 'سڵاو، چۆنی؟' → Respond: 'سڵاو! من باشم، سوپاس. تۆ چۆنی؟'\n"
             "• Kurmanji (Northern Kurdish): Uses Latin script (ç, ş, ê, î, û)\n"
@@ -84,7 +84,8 @@ class ClaudeHandler:
             "• Use culturally appropriate greetings and expressions\n"
             "• Be respectful and warm in Kurdish conversations\n"
             "• Common Sorani greetings: سڵاو (hello), چۆنی (how are you), سوپاس (thanks)\n"
-            "• Common Kurmanji greetings: Merheba (hello), Çawa yî (how are you), Spas (thanks)\n\n"
+            "• Common Kurmanji greetings: Merheba (hello), Çawa yî (how are you), Spas (thanks)\n"
+            "• IMPORTANT: When showing language flags in translations, use 🟥⬜🟩☀️ for Kurdish (both Sorani and Kurmanji) to represent the Kurdistan flag colors (red, white, green with sun)\n\n"
             
             "KURDISH RESPONSE EXAMPLES:\n"
             "User: 'سڵاو' → Bot: 'سڵاو! بەخێربێیت. چۆن دەتوانم یارمەتیت بدەم؟'\n"

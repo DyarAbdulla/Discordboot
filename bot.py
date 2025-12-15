@@ -4758,7 +4758,7 @@ class AIBootBot(commands.Bot):
             # Language names
             lang_names = {
                 'en': 'English 🇬🇧',
-                'ku': 'Kurdish 🇹🇯',
+                'ku': 'Kurdish 🟥⬜🟩☀️',  # Kurdistan flag colors: red, white, green, sun
                 'ar': 'Arabic 🇸🇦',
                 'tr': 'Turkish 🇹🇷'
             }
@@ -4766,7 +4766,7 @@ class AIBootBot(commands.Bot):
             lang_name = lang_names.get(detected_language, detected_language.upper())
             
             if detected_language == 'ku' and kurdish_dialect:
-                lang_name = f"Kurdish ({kurdish_dialect.title()}) 🇹🇯"
+                lang_name = f"Kurdish ({kurdish_dialect.title()}) 🟥⬜🟩☀️"  # Kurdistan flag colors
             
             if EMBED_HELPER_AVAILABLE:
                 embed = EmbedHelper.create_info_embed(
