@@ -4058,13 +4058,13 @@ class AIBootBot(commands.Bot):
             print(f"[ERROR] Quote command failed: {e}")
             await ctx.send("❌ Oops! Couldn't get a quote right now.")
     
-    @commands.command(name="8ball", aliases=["eightball", "magic8ball"])
+    @commands.command(name="eightball", aliases=["8ball", "magic8ball"])
     async def eightball_command(self, ctx: commands.Context, *, question: str):
         """Ask the Magic 8-Ball a question
         
         Usage:
-        !8ball Will I have a good day?
-        !8ball Should I learn Python?
+        !eightball Will I have a good day?
+        !eightball Should I learn Python?
         """
         responses = [
             "🎱 It is certain.",
@@ -4745,10 +4745,8 @@ class AIBootBot(commands.Bot):
     async def mute_command(self, ctx: commands.Context, member: discord.Member = None, duration: Optional[str] = None, *, reason: Optional[str] = None):
         """Mute a user for a specified time (Admin only)
         
-        Usage:
-        !mute @user 10m [reason] - Mute for 10 minutes
-        !mute @user 1h [reason] - Mute for 1 hour
-        !mute @user 1d [reason] - Mute for 1 day
+        Usage: !mute @user [duration] [reason]
+        Duration formats: minutes (m), hours (h), days (d)
         """
         if not member:
             await ctx.send("❌ Please mention a user to mute!")
@@ -5724,12 +5722,7 @@ class AIBootBot(commands.Bot):
     @commands.command(name="restore")
     @commands.is_owner()
     async def restore_command(self, ctx: commands.Context, backup_id: Optional[str] = None):
-        """Restore database from backup (Owner only)
-        
-        Usage:
-        !restore [backup_id] - Restore from specific backup
-        !restore latest - Restore from latest backup
-        """
+        """Restore database from backup (Owner only). Usage: !restore [backup_id] or !restore latest"""
         if not backup_id:
             await ctx.send("❌ Usage: `!restore [backup_id]` or `!restore latest`\nUse `!backups list` to see available backups.")
             return
@@ -5762,11 +5755,11 @@ class AIBootBot(commands.Bot):
                 embed = EmbedHelper.create_error_embed(
                     title="⚠️ WARNING",
                     description="This will overwrite current databases!",
-                    error_details="Reply with `confirm` in the next 30 seconds to proceed."
+                    error_details="Reply with 'confirm' in the next 30 seconds to proceed."
                 )
                 await ctx.send(embed=embed)
             else:
-                await ctx.send("⚠️ **WARNING:** This will overwrite current databases! Reply with `confirm` to proceed.")
+                await ctx.send("⚠️ **WARNING:** This will overwrite current databases! Reply with 'confirm' to proceed.")
             
             # Wait for confirmation
             def check(m):
@@ -5790,14 +5783,16 @@ class AIBootBot(commands.Bot):
             
             if restored_files:
                 if EMBED_HELPER_AVAILABLE:
+                    files_list = "\n".join([f"• {f}" for f in restored_files])
                     embed = EmbedHelper.create_success_embed(
                         title="✅ Restore Complete",
-                        description=f"Restored {len(restored_files)} database(s):\n" + "\n".join([f"• {f}" for f in restored_files]),
+                        description=f"Restored {len(restored_files)} database(s):\n{files_list}",
                         details="Bot restart recommended to load restored data"
                     )
                     await ctx.send(embed=embed)
                 else:
-                    await ctx.send(f"✅ **Restore Complete**\n\nRestored {len(restored_files)} database(s):\n" + "\n".join([f"• {f}" for f in restored_files]))
+                    files_list = "\n".join([f"• {f}" for f in restored_files])
+                    await ctx.send(f"✅ **Restore Complete**\n\nRestored {len(restored_files)} database(s):\n{files_list}")
             else:
                 await ctx.send("❌ No database files found in backup!")
         
@@ -5816,7 +5811,7 @@ class AIBootBot(commands.Bot):
             traceback.print_exc()
     
     async def close(self):
-        """Called when bot is shutting down"""
+        """Called when bot is shutting down."""
         # Cancel cleanup task
         if self.cleanup_task:
             self.cleanup_task.cancel()
@@ -5832,8 +5827,10 @@ class AIBootBot(commands.Bot):
         await super().close()
 
 
+# End of AIBootBot class
+
 async def main():
-    """Main function to run the bot"""
+    # Main function to run the bot
     # Get Discord token from environment
     token = os.getenv("DISCORD_TOKEN")
     
