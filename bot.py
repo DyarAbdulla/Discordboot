@@ -1708,7 +1708,8 @@ class AIBootBot(commands.Bot):
                 
                 # ALWAYS try Claude API if available
                 if self.use_claude and self.claude_handler:
-                    print(f"[DEBUG] Calling Claude API for: {content[:50]}...")
+                    print(f"[DEBUG] ✅ Claude is available - calling API for: {content[:50]}...")
+                    print(f"[DEBUG] use_claude={self.use_claude}, claude_handler={self.claude_handler is not None}")
                     if detected_language == 'ku':
                         print(f"[DEBUG] Language: Kurdish ({kurdish_dialect or 'general'})")
                     # Add follow-up context to system prompt if this is a follow-up question
@@ -1829,21 +1830,77 @@ class AIBootBot(commands.Bot):
                         model_used = "static_fallback"
                         self.fallback_responses += 1
                 else:
-                    # Claude not available, use static responses
-                    print(f"[WARNING] Claude not available. use_claude={self.use_claude}, handler={self.claude_handler is not None}")
-                    print(f"[WARNING] Claude API Key present: {bool(os.getenv('CLAUDE_API_KEY'))}")
-                    print(f"[WARNING] CLAUDE_AVAILABLE: {CLAUDE_AVAILABLE}")
-                    # Try to provide a helpful response even without Claude
-                    if detected_language == 'ku':
-                        response_text = "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن بە AI. تکایە دواتر هەوڵ بدەوە یان بە زمانی ئینگلیزی بپرسە."
+                    # Claude not available - this should NOT happen if API key is set correctly
+                    print(f"[ERROR] ❌ Claude not available! use_claude={self.use_claude}, handler={self.claude_handler is not None}")
+                    print(f"[ERROR] Claude API Key present in env: {bool(os.getenv('CLAUDE_API_KEY'))}")
+                    print(f"[ERROR] CLAUDE_AVAILABLE: {CLAUDE_AVAILABLE}")
+                    print(f"[ERROR] This means Claude handler failed to initialize. Check Railway logs for initialization errors.")
+                    
+                    # Try to reinitialize Claude handler if API key is present
+                    claude_key = os.getenv("CLAUDE_API_KEY")
+                    if claude_key and CLAUDE_AVAILABLE and not self.claude_handler:
+                        print(f"[INFO] Attempting to reinitialize Claude handler...")
+                        try:
+                            self.claude_handler = ClaudeHandler()
+                            self.use_claude = True
+                            print(f"[OK] Claude handler reinitialized successfully!")
+                            # Retry with Claude
+                            follow_up_note_retry = None
+                            if is_follow_up and follow_up_context:
+                                follow_up_note_retry = (
+                                    f"This appears to be a follow-up question related to the previous conversation. "
+                                    f"The user's last question was answered with: '{follow_up_context[:200]}...' "
+                                    f"Reference this context naturally in your response if relevant."
+                                )
+                            result = await self.claude_handler.generate_response(
+                                messages=api_messages,
+                                user_name=message.author.display_name,
+                                summaries=summary_texts if summary_texts else None,
+                                detected_language=detected_language,
+                                kurdish_dialect=kurdish_dialect,
+                                user_facts=user_facts,
+                                follow_up_context=follow_up_note_retry
+                            )
+                            if result["success"]:
+                                response_text = result["response"]
+                                used_claude = True
+                                tokens_used = result.get("tokens_used", 0)
+                                model_used = self.claude_handler.model
+                                self.claude_responses += 1
+                                print(f"[DEBUG] ✅ Claude API success after reinit! Response length: {len(response_text)}")
+                            else:
+                                # Use Claude's user-friendly error message
+                                if result.get('response') and result.get('user_friendly'):
+                                    response_text = result['response']
+                                else:
+                                    response_text = "I'm having trouble connecting. Please try again in a moment. 😊"
+                                model_used = "static_fallback"
+                                self.fallback_responses += 1
+                        except Exception as e:
+                            print(f"[ERROR] Failed to reinitialize Claude: {e}")
+                            # Fall through to static response
+                            if detected_language == 'ku':
+                                response_text = "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن بە AI. تکایە دواتر هەوڵ بدەوە یان بە زمانی ئینگلیزی بپرسە."
+                            else:
+                                response_text = (
+                                    "I'm currently experiencing issues connecting to the AI service. "
+                                    "Please try again in a moment, or use `!help` to see available commands. "
+                                    "If this persists, the Claude API key may need to be configured."
+                                )
+                            model_used = "static_fallback"
+                            self.fallback_responses += 1
                     else:
-                        response_text = (
-                            "I'm currently experiencing issues connecting to the AI service. "
-                            "Please try again in a moment, or use `!help` to see available commands. "
-                            "If this persists, the Claude API key may need to be configured."
-                        )
-                    model_used = "static_fallback"
-                    self.fallback_responses += 1
+                        # No API key or module not available
+                        if detected_language == 'ku':
+                            response_text = "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن بە AI. تکایە دواتر هەوڵ بدەوە یان بە زمانی ئینگلیزی بپرسە."
+                        else:
+                            response_text = (
+                                "I'm currently experiencing issues connecting to the AI service. "
+                                "Please try again in a moment, or use `!help` to see available commands. "
+                                "If this persists, the Claude API key may need to be configured."
+                            )
+                        model_used = "static_fallback"
+                        self.fallback_responses += 1
                 
                 # Store bot response in database (persistent memory)
                 if self.memory_manager:
