@@ -44,13 +44,20 @@ class ClaudeHandler:
         )
         self.model = "claude-3-5-haiku-20241022"  # Faster and cheaper than Sonnet
         
-        # System prompt for direct, helpful personality with Kurdish support
+        # System prompt for friendly, professional but warm personality with multilingual support
         self.system_prompt = (
-            "You are AI Boot, a friendly Discord bot assistant. "
-            "Answer questions directly and completely. "
-            "Don't ask for clarification - just provide helpful answers. "
-            "Be conversational but get to the point quickly. "
-            "Keep responses under 400 tokens and Discord-friendly.\n\n"
+            "You are AI Boot, a friendly and helpful Discord bot assistant. "
+            "You have a professional yet warm personality - be knowledgeable and reliable, but also approachable and friendly. "
+            "Use emojis occasionally (😊, 👍, ✨, 💡) to add friendliness, but don't overuse them. "
+            "Answer questions directly and completely. Don't ask for clarification - provide helpful answers based on context. "
+            "Be conversational but get to the point quickly. Keep responses concise (max 300 tokens) and Discord-friendly.\n\n"
+            
+            "📝 RESPONSE FORMATTING:\n"
+            "- Use bullet points (•) for lists when helpful\n"
+            "- Structure longer responses with clear sections\n"
+            "- Use line breaks for readability\n"
+            "- Keep paragraphs short (2-3 sentences max)\n"
+            "- Format code/technical terms with backticks when appropriate\n\n"
             
             "💬 CONVERSATION FLOW GUIDELINES:\n"
             "- Maintain natural conversation flow across multiple messages\n"
@@ -59,12 +66,15 @@ class ClaudeHandler:
             "- Ask relevant follow-up questions when appropriate to keep conversation engaging\n"
             "- Connect current questions to previous context naturally\n"
             "- If the user asks about something you already explained, briefly reference it: 'Like I said before...'\n"
-            "- Maintain topic continuity - don't abruptly change subjects unless the user does\n\n"
+            "- Maintain topic continuity - don't abruptly change subjects unless the user does\n"
+            "- Remember the last 10 messages in the conversation for context\n\n"
             
             "🌍 MULTILINGUAL SUPPORT:\n"
             "You support Kurdish (Sorani and Kurmanji dialects), English, and Arabic.\n"
+            "ALWAYS respond in the SAME LANGUAGE the user uses. Auto-detect their language and match it exactly.\n"
             "When a user speaks Kurdish, respond FULLY in Kurdish using the same dialect.\n"
-            "For mixed languages, match the user's language preference.\n\n"
+            "For mixed languages, match the user's primary language preference.\n"
+            "For error messages, use the user's detected language.\n\n"
             
             "🇹🇯 KURDISH LANGUAGE GUIDELINES:\n"
             "• Sorani (Central Kurdish): Uses Arabic script (ئە, پ, ژ, گ, چ, ۆ, ش)\n"
@@ -86,7 +96,15 @@ class ClaudeHandler:
             "- Use natural, conversational Kurdish\n"
             "- Match the dialect (Sorani/Kurmanji) the user is using\n"
             "- Include appropriate cultural expressions\n"
-            "- Be warm and friendly as Kurdish culture values hospitality"
+            "- Be warm and friendly as Kurdish culture values hospitality\n\n"
+            
+            "⚠️ ERROR HANDLING:\n"
+            "If you encounter an error or can't provide an answer, respond in the user's language:\n"
+            "- English: 'I'm having trouble connecting. Please try again in a moment.'\n"
+            "- Kurdish (Sorani): 'ببورە، هەندێک کێشە هەیە. تکایە دواتر هەوڵ بدەوە.'\n"
+            "- Kurdish (Kurmanji): 'Bibûre, hinek kêşe heye. Tika duar hewl bide.'\n"
+            "- Arabic: 'أواجه مشكلة في الاتصال. يرجى المحاولة مرة أخرى في لحظة.'\n"
+            "Never expose technical error details to users - keep messages friendly and simple."
         )
         
         # API usage tracking
@@ -225,7 +243,8 @@ class ClaudeHandler:
                     # Call Claude API (async)
                     response = await self.client.messages.create(
                         model=self.model,
-                        max_tokens=400,  # Keep responses concise for Discord
+                        max_tokens=300,  # Keep responses concise for Discord (reduced from 400)
+                        temperature=0.7,  # Balanced creativity - professional but warm
                         system=system_prompt,
                         messages=messages
                     )
@@ -370,13 +389,17 @@ class ClaudeHandler:
             traceback.print_exc()
             self._log_api_call(user_name, False, 0, f"{error_type}: {error_msg}")
             
+            # Generate user-friendly error message based on detected language
+            user_friendly_error = self._get_user_friendly_error(detected_language, kurdish_dialect)
+            
             # Return error details
             return {
-                "response": None,
+                "response": user_friendly_error,  # Provide user-friendly message instead of None
                 "success": False,
                 "error": f"{error_type}: {error_msg}",
                 "tokens_used": 0,
-                "retry_attempts": max_retries
+                "retry_attempts": max_retries,
+                "user_friendly": True
             }
         except Exception as e:
             # Catch any unexpected errors in the outer try block
@@ -386,11 +409,15 @@ class ClaudeHandler:
             import traceback
             traceback.print_exc()
             
+            # Generate user-friendly error message (use default language since we don't have context)
+            user_friendly_error = self._get_user_friendly_error(None, None)
+            
             return {
-                "response": None,
+                "response": user_friendly_error,  # Provide user-friendly message
                 "success": False,
                 "error": f"{error_type}: {error_msg}",
-                "tokens_used": 0
+                "tokens_used": 0,
+                "user_friendly": True
             }
     
     async def generate_question_suggestions(
@@ -601,6 +628,32 @@ class ClaudeHandler:
             )
             for key, _ in sorted_cache[:-100]:
                 del self.response_cache[key]
+    
+    def _get_user_friendly_error(
+        self, 
+        detected_language: Optional[str] = None, 
+        kurdish_dialect: Optional[str] = None
+    ) -> str:
+        """
+        Get user-friendly error message in the user's language
+        
+        Args:
+            detected_language: Detected user language
+            kurdish_dialect: Kurdish dialect if applicable
+            
+        Returns:
+            User-friendly error message
+        """
+        if detected_language == 'ku':
+            if kurdish_dialect == 'Sorani':
+                return "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن. تکایە دواتر هەوڵ بدەوە. 😊"
+            else:
+                return "Bibûre, hinek kêşe heye li destgeştinê. Tika duar hewl bide. 😊"
+        elif detected_language == 'ar':
+            return "أواجه مشكلة في الاتصال. يرجى المحاولة مرة أخرى في لحظة. 😊"
+        else:
+            # Default to English
+            return "I'm having trouble connecting. Please try again in a moment. 😊"
     
     def _get_any_cached_response(self) -> Optional[Dict]:
         """
