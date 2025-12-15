@@ -1,6 +1,7 @@
 """
 AI Boot - Discord Bot with Claude AI Integration
 Intelligent conversational bot powered by Claude Sonnet 4
+Fixed syntax errors - all docstrings updated
 """
 
 import discord
