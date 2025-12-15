@@ -315,6 +315,20 @@ class ClaudeHandler:
                 "tokens_used": 0,
                 "retry_attempts": max_retries
             }
+        except Exception as e:
+            # Catch any unexpected errors in the outer try block
+            error_msg = str(e)
+            error_type = type(e).__name__
+            print(f"[ERROR] Unexpected error in generate_response: {error_type}: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                "response": None,
+                "success": False,
+                "error": f"{error_type}: {error_msg}",
+                "tokens_used": 0
+            }
     
     async def generate_question_suggestions(
         self,
@@ -451,22 +465,6 @@ class ClaudeHandler:
         except Exception as e:
             print(f"[ERROR] Failed to generate question suggestions: {e}")
             return []
-        
-        except Exception as e:
-            # This should not happen if retry logic works correctly
-            # But keep as final fallback
-            error_msg = str(e)
-            error_type = type(e).__name__
-            print(f"[ERROR] Unexpected error in generate_response: {error_type}: {error_msg}")
-            import traceback
-            traceback.print_exc()
-            
-            return {
-                "response": None,
-                "success": False,
-                "error": f"{error_type}: {error_msg}",
-                "tokens_used": 0
-            }
     
     def _get_cache_key(self, messages: List[Dict[str, str]], system_prompt: str) -> str:
         """
