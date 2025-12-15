@@ -6,6 +6,7 @@ Handles all Claude API interactions with proper error handling and logging
 import os
 import asyncio
 from anthropic import AsyncAnthropic
+from anthropic._exceptions import APIConnectionError, APIError, APIStatusError
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import json
@@ -34,8 +35,13 @@ class ClaudeHandler:
         if not api_key:
             raise ValueError("CLAUDE_API_KEY not found in environment variables")
         
-        # Initialize Anthropic async client
-        self.client = AsyncAnthropic(api_key=api_key)
+        # Initialize Anthropic async client with timeout configuration
+        # Use longer timeouts to handle network issues better
+        self.client = AsyncAnthropic(
+            api_key=api_key,
+            timeout=60.0,  # 60 second timeout for requests
+            max_retries=0  # We handle retries ourselves
+        )
         self.model = "claude-3-5-haiku-20241022"  # Faster and cheaper than Sonnet
         
         # System prompt for direct, helpful personality with Kurdish support
@@ -252,14 +258,71 @@ class ClaudeHandler:
                         "retry_attempt": attempt + 1 if attempt > 0 else None
                     }
                 
+                except APIConnectionError as e:
+                    # Handle connection errors specifically
+                    last_error = e
+                    error_type = type(e).__name__
+                    error_msg = str(e)
+                    
+                    print(f"[ERROR] Claude API connection error (attempt {attempt + 1}/{max_retries}): {error_msg}")
+                    print(f"[ERROR] This might be a network issue. Retrying...")
+                    
+                    # Connection errors are retryable - continue to next attempt
+                    if attempt < max_retries - 1:
+                        continue
+                    else:
+                        print(f"[ERROR] All {max_retries} retry attempts failed due to connection errors")
+                        print(f"[ERROR] Please check your network connection and Railway deployment status")
+                
+                except APIStatusError as e:
+                    # Handle HTTP status errors (401, 403, 429, 500, etc.)
+                    last_error = e
+                    error_type = type(e).__name__
+                    error_msg = str(e)
+                    status_code = getattr(e, 'status_code', None)
+                    
+                    print(f"[ERROR] Claude API status error (attempt {attempt + 1}/{max_retries}): {error_type}: {error_msg}")
+                    
+                    # Don't retry on authentication errors
+                    if status_code in [401, 403]:
+                        print(f"[ERROR] Authentication error - API key may be invalid or expired")
+                        print(f"[ERROR] Please check your CLAUDE_API_KEY in Railway environment variables")
+                        break
+                    
+                    # Don't retry on client errors (4xx) except 429 (rate limit)
+                    if status_code and 400 <= status_code < 500 and status_code != 429:
+                        print(f"[ERROR] Client error ({status_code}) - not retrying")
+                        break
+                    
+                    # Retry on rate limits and server errors
+                    if attempt < max_retries - 1:
+                        continue
+                    else:
+                        print(f"[ERROR] All {max_retries} retry attempts failed")
+                
+                except APIError as e:
+                    # Handle other API errors
+                    last_error = e
+                    error_type = type(e).__name__
+                    error_msg = str(e)
+                    
+                    print(f"[ERROR] Claude API error (attempt {attempt + 1}/{max_retries}): {error_type}: {error_msg}")
+                    
+                    # Continue to next retry attempt
+                    if attempt < max_retries - 1:
+                        continue
+                    else:
+                        print(f"[ERROR] All {max_retries} retry attempts failed")
+                
                 except Exception as e:
+                    # Handle any other unexpected errors
                     last_error = e
                     error_type = type(e).__name__
                     error_msg = str(e)
                     
                     print(f"[ERROR] Claude API call failed (attempt {attempt + 1}/{max_retries}): {error_type}: {error_msg}")
                     
-                    # Don't retry on certain errors (e.g., invalid API key, rate limit exceeded)
+                    # Don't retry on certain errors (e.g., invalid API key)
                     if "authentication" in error_msg.lower() or "api key" in error_msg.lower() or "401" in error_msg or "403" in error_msg:
                         print(f"[ERROR] Authentication error - API key may be invalid or expired")
                         print(f"[ERROR] Please check your CLAUDE_API_KEY in Railway environment variables")
@@ -875,6 +938,42 @@ class ClaudeHandler:
                 f.write(json.dumps(log_entry) + "\n")
         except Exception as e:
             print(f"Error logging API call: {e}")
+    
+    async def test_api_key(self) -> Dict[str, any]:
+        """
+        Tests the Claude API key by making a simple, non-conversational request.
+        Returns:
+            Dict with 'success' (bool) and 'error' (str, if any).
+        """
+        try:
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=10,
+                system="You are a helpful assistant.",
+                messages=[{"role": "user", "content": "Hello"}]
+            )
+            if response.content and response.content[0].text:
+                return {"success": True, "error": None}
+            else:
+                return {"success": False, "error": "Empty response from API test."}
+        except APIConnectionError as e:
+            error_msg = str(e)
+            print(f"[ERROR] Claude API key test failed: APIConnectionError: {error_msg}")
+            return {"success": False, "error": f"Connection error: {error_msg}"}
+        except APIStatusError as e:
+            error_msg = str(e)
+            status_code = getattr(e, 'status_code', None)
+            print(f"[ERROR] Claude API key test failed: APIStatusError ({status_code}): {error_msg}")
+            return {"success": False, "error": f"API error ({status_code}): {error_msg}"}
+        except APIError as e:
+            error_msg = str(e)
+            print(f"[ERROR] Claude API key test failed: APIError: {error_msg}")
+            return {"success": False, "error": f"API error: {error_msg}"}
+        except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+            print(f"[ERROR] Claude API key test failed: {error_type}: {error_msg}")
+            return {"success": False, "error": f"{error_type}: {error_msg}"}
     
     def get_stats(self) -> Dict:
         """Get API usage statistics"""
