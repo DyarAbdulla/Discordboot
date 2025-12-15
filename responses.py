@@ -1,9 +1,17 @@
 """
 Static Responses for dyarboot
 All pre-written responses organized by category
+Includes Kurdish (Sorani and Kurmanji) support
 """
 
 from datetime import datetime
+
+# Import Kurdish detector for language-aware responses
+try:
+    from utils.kurdish_detector import KurdishDetector
+    KURDISH_DETECTOR_AVAILABLE = True
+except ImportError:
+    KURDISH_DETECTOR_AVAILABLE = False
 
 
 # Dictionary of keywords and their responses
@@ -67,18 +75,112 @@ RESPONSES = {
     }
 }
 
+# Kurdish responses (Sorani - Central Kurdish)
+KURDISH_SORANI_RESPONSES = {
+    "greetings": {
+        "keywords": ["سڵاو", "سڵاوات", "چۆنی", "چۆنیت"],
+        "response": "سڵاو! بەخێربێیت 👋 چۆن دەتوانم یارمەتیت بدەم؟"
+    },
+    "good_morning": {
+        "keywords": ["بەیانی باش", "بەیانی"],
+        "response": "بەیانی باش! هیوادارم ڕۆژێکی باشت هەبێت! ☀️"
+    },
+    "how_are_you": {
+        "keywords": ["چۆنی", "چۆنیت", "چۆنیتن"],
+        "response": "من باشم، سوپاس بۆ پرسیارەکەت! تۆ چۆنی؟ 😊"
+    },
+    "thanks": {
+        "keywords": ["سوپاس", "سوپاسگوزارم", "زۆر سوپاس"],
+        "response": "سوپاسگوزارم! خۆشحاڵم کە یارمەتیت دابێت! 😊"
+    },
+    "goodbye": {
+        "keywords": ["خوات لەگەڵ", "بەخێربیت", "خوات لەگەڵ بێت"],
+        "response": "خوات لەگەڵ! دواتر دیت! 👋"
+    },
+    "default": {
+        "keywords": [],
+        "response": "بیستمت! هێشتا فێردەبم، بەڵام لێرەم بۆ گفتوگۆ! تکایە شتێکی ساکار بپرسە یان !help بەکاربهێنە."
+    }
+}
 
-def find_response(message: str) -> str:
+# Kurdish responses (Kurmanji - Northern Kurdish)
+KURDISH_KURMANJI_RESPONSES = {
+    "greetings": {
+        "keywords": ["merheba", "silav", "çawa", "çawan"],
+        "response": "Merheba! Bi xêr hatî 👋 Çawa dikarim alîkariya te bikim?"
+    },
+    "good_morning": {
+        "keywords": ["roj baş", "baş be"],
+        "response": "Roj baş! Hêvî dikim rojek baş te hebe! ☀️"
+    },
+    "how_are_you": {
+        "keywords": ["çawa yî", "çawa ne", "çawan"],
+        "response": "Ez baş im, spas ji bo pirsê te! Tu çawa yî? 😊"
+    },
+    "thanks": {
+        "keywords": ["spas", "spasxwe", "gelek spas"],
+        "response": "Spasxwe! Kêfxweş im ku alîkariya te kirim! 😊"
+    },
+    "goodbye": {
+        "keywords": ["bi xatirê te", "bi xatirê we", "xatirê te"],
+        "response": "Bi xatirê te! Paşê te dibînim! 👋"
+    },
+    "default": {
+        "keywords": [],
+        "response": "Bihîstîm! Hîn hêj hîn dibim, lê li vir im ji bo axaftinê! Ji kerema xwe tiştek hêsan bipirse an !help bikar bîne."
+    }
+}
+
+
+def find_response(message: str, detected_language: str = None, kurdish_dialect: str = None) -> str:
     """
     Find appropriate response based on message content
     
     Args:
         message: User's message text
+        detected_language: Detected language code ('ku', 'en', 'ar')
+        kurdish_dialect: Kurdish dialect ('sorani', 'kurmanji')
         
     Returns:
         Response string
     """
-    # Convert to lowercase for case-insensitive matching
+    # Detect Kurdish if not provided
+    if KURDISH_DETECTOR_AVAILABLE and detected_language is None:
+        lang_result = KurdishDetector.detect_language(message)
+        detected_language = lang_result[0]
+        if detected_language == 'ku':
+            kurdish_result = KurdishDetector.detect_kurdish(message)
+            if kurdish_result:
+                kurdish_dialect, _ = kurdish_result
+    
+    # Handle Kurdish responses
+    if detected_language == 'ku':
+        if kurdish_dialect == 'sorani':
+            responses_dict = KURDISH_SORANI_RESPONSES
+        elif kurdish_dialect == 'kurmanji':
+            responses_dict = KURDISH_KURMANJI_RESPONSES
+        else:
+            # Default to Sorani if dialect unknown
+            responses_dict = KURDISH_SORANI_RESPONSES
+        
+        message_lower = message.lower()
+        message_original = message
+        
+        # Check each response category
+        for category, data in responses_dict.items():
+            # Skip default category
+            if category == "default":
+                continue
+            
+            # Check if any keyword matches
+            for keyword in data["keywords"]:
+                if keyword in message_lower or keyword in message_original:
+                    return data["response"]
+        
+        # No match found, return default Kurdish response
+        return responses_dict["default"]["response"]
+    
+    # English/Arabic responses (original logic)
     message_lower = message.lower()
     
     # Check each response category

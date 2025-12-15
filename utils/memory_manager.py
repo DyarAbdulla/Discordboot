@@ -90,6 +90,39 @@ class MemoryManager:
             )
         """)
         
+        # Table for user preferences (language, personality, etc.)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                preference_key TEXT NOT NULL,
+                preference_value TEXT NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, channel_id, preference_key),
+                INDEX idx_user_channel (user_id, channel_id)
+            )
+        """)
+        
+        # Table for user facts (name, interests, important information)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_facts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                fact_key TEXT NOT NULL,
+                fact_value TEXT NOT NULL,
+                importance_score REAL DEFAULT 0.5,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_accessed DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, channel_id, fact_key),
+                INDEX idx_user_channel (user_id, channel_id),
+                INDEX idx_fact_key (fact_key),
+                INDEX idx_importance (importance_score)
+            )
+        """)
+        
         # Add importance_score column if it doesn't exist (migration)
         try:
             cursor.execute("ALTER TABLE summaries ADD COLUMN importance_score REAL DEFAULT 0.5")
@@ -386,7 +419,8 @@ class MemoryManager:
         user_id: str,
         channel_id: str,
         include_summaries: bool = True,
-        min_importance: float = 0.2
+        min_importance: float = 0.2,
+        limit: Optional[int] = None
     ) -> Tuple[List[Dict[str, str]], List[str]]:
         """
         Get full conversation context (summaries + recent messages)
@@ -413,7 +447,9 @@ class MemoryManager:
         channel_id = str(channel_id)
         
         # Get recent messages (short-term memory) - ISOLATED BY USER+CHANNEL
-        messages = self.get_recent_messages(user_id, channel_id)
+        if limit is None:
+            limit = self.short_term_limit
+        messages = self.get_recent_messages(user_id, channel_id, limit=limit)
         
         # Get summaries (long-term memory) - ISOLATED BY USER+CHANNEL
         summaries = []
@@ -650,4 +686,201 @@ class MemoryManager:
             "total_summaries": summary_count,
             "unique_users": user_count
         }
+    
+    def set_user_preference(
+        self,
+        user_id: str,
+        channel_id: str,
+        preference_key: str,
+        preference_value: str
+    ):
+        """
+        Set a user preference (language, personality, etc.)
+        
+        Args:
+            user_id: Discord user ID
+            channel_id: Discord channel ID
+            preference_key: Preference key (e.g., 'language', 'kurdish_dialect', 'personality')
+            preference_value: Preference value (e.g., 'ku', 'sorani', 'friendly')
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO user_preferences 
+            (user_id, channel_id, preference_key, preference_value, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (str(user_id), str(channel_id), preference_key, preference_value))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_user_preference(
+        self,
+        user_id: str,
+        channel_id: str,
+        preference_key: str,
+        default_value: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Get a user preference
+        
+        Args:
+            user_id: Discord user ID
+            channel_id: Discord channel ID
+            preference_key: Preference key
+            default_value: Default value if preference not found
+            
+        Returns:
+            Preference value or default_value
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT preference_value FROM user_preferences
+            WHERE user_id = ? AND channel_id = ? AND preference_key = ?
+        """, (str(user_id), str(channel_id), preference_key))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return result[0]
+        return default_value
+    
+    def export_summaries_to_csv(
+        self,
+        output_path: str = "summaries_export.csv",
+        user_id: Optional[str] = None,
+        channel_id: Optional[str] = None
+    ) -> str:
+        """
+        Export summaries to CSV file
+        
+        Args:
+            output_path: Path to output CSV file
+            user_id: Optional filter by user ID
+            channel_id: Optional filter by channel ID
+            
+        Returns:
+            Path to exported file
+        """
+        import csv
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Build query
+        query = """
+            SELECT id, user_id, channel_id, summary_text, message_count,
+                   start_timestamp, end_timestamp, importance_score, created_at
+            FROM summaries
+            WHERE 1=1
+        """
+        params = []
+        
+        if user_id:
+            query += " AND user_id = ?"
+            params.append(str(user_id))
+        
+        if channel_id:
+            query += " AND channel_id = ?"
+            params.append(str(channel_id))
+        
+        query += " ORDER BY created_at DESC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Write to CSV
+        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # Write header
+            writer.writerow([
+                'id', 'user_id', 'channel_id', 'summary_text', 'message_count',
+                'start_timestamp', 'end_timestamp', 'importance_score', 'created_at'
+            ])
+            
+            # Write data
+            for row in rows:
+                writer.writerow([
+                    row[0],  # id
+                    row[1],  # user_id
+                    row[2],  # channel_id
+                    row[3],  # summary_text
+                    row[4],  # message_count
+                    row[5],  # start_timestamp
+                    row[6],  # end_timestamp
+                    row[7] if len(row) > 7 else 0.5,  # importance_score
+                    row[8] if len(row) > 8 else row[5]  # created_at
+                ])
+        
+        print(f"[OK] Exported {len(rows)} summaries to {output_path}")
+        return output_path
+    
+    def get_all_summaries(
+        self,
+        user_id: Optional[str] = None,
+        channel_id: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[Dict[str, any]]:
+        """
+        Get all summaries
+        
+        Args:
+            user_id: Optional filter by user ID
+            channel_id: Optional filter by channel ID
+            limit: Optional limit number of results
+            
+        Returns:
+            List of summary dictionaries
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Build query
+        query = """
+            SELECT id, user_id, channel_id, summary_text, message_count,
+                   start_timestamp, end_timestamp, importance_score, created_at
+            FROM summaries
+            WHERE 1=1
+        """
+        params = []
+        
+        if user_id:
+            query += " AND user_id = ?"
+            params.append(str(user_id))
+        
+        if channel_id:
+            query += " AND channel_id = ?"
+            params.append(str(channel_id))
+        
+        query += " ORDER BY created_at DESC"
+        
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        summaries = []
+        for row in rows:
+            summaries.append({
+                "id": row[0],
+                "user_id": row[1],
+                "channel_id": row[2],
+                "summary_text": row[3],
+                "message_count": row[4],
+                "start_timestamp": row[5],
+                "end_timestamp": row[6],
+                "importance_score": row[7] if len(row) > 7 else 0.5,
+                "created_at": row[8] if len(row) > 8 else row[5]
+            })
+        
+        return summaries
 
