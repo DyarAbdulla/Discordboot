@@ -96,10 +96,18 @@ class SlashCommands(commands.Cog):
         await interaction.response.send_message(embed=embed)
     
     @app_commands.command(name="ask", description="Ask the bot anything")
-    @app_commands.describe(question="Your question or message to the bot")
-    async def ask_slash(self, interaction: discord.Interaction, question: str):
+    @app_commands.describe(question="Your question or message to the bot (optional)")
+    async def ask_slash(self, interaction: discord.Interaction, question: Optional[str] = None):
         """Ask the bot a question"""
         await interaction.response.defer()
+        
+        # If no question provided, prompt user
+        if not question or question.strip() == "":
+            await interaction.followup.send(
+                "👋 Hi! I'm ready to chat! Just ask me anything, or use `/ask [your question]` to ask me something specific.\n\n"
+                "You can also just @mention me in a message to start a conversation!"
+            )
+            return
         
         # Show typing indicator while processing
         # Note: Discord automatically shows typing for deferred interactions, but we can keep it active
@@ -192,12 +200,31 @@ class SlashCommands(commands.Cog):
                     model_used = self.bot.claude_handler.model
                     self.bot.claude_responses += 1
                 else:
-                    # Fallback to static response
-                    response_text = find_response(question, detected_language, kurdish_dialect)
+                    # Claude API failed - use fallback with helpful message
+                    error_msg = result.get("error", "Unknown error")
+                    print(f"[WARNING] Claude API failed: {error_msg}")
+                    fallback_response = find_response(question, detected_language, kurdish_dialect)
+                    
+                    # Add helpful note about API issue
+                    if "authentication" in error_msg.lower() or "api key" in error_msg.lower():
+                        response_text = (
+                            f"{fallback_response}\n\n"
+                            f"⚠️ **Note:** Claude API authentication failed. Please check your API key configuration."
+                        )
+                    else:
+                        response_text = (
+                            f"{fallback_response}\n\n"
+                            f"⚠️ **Note:** Claude AI is temporarily unavailable. Using fallback responses."
+                        )
                     self.bot.fallback_responses += 1
             else:
-                # Use static responses
-                response_text = find_response(question, detected_language, kurdish_dialect)
+                # Claude not configured - use static responses with helpful message
+                fallback_response = find_response(question, detected_language, kurdish_dialect)
+                response_text = (
+                    f"{fallback_response}\n\n"
+                    f"ℹ️ **Note:** Claude AI is not configured. Using basic responses. "
+                    f"Configure `CLAUDE_API_KEY` in your `.env` file for AI-powered responses."
+                )
                 self.bot.fallback_responses += 1
             
             # Store bot response
@@ -326,10 +353,23 @@ class SlashCommands(commands.Cog):
                 
                 await interaction.followup.send(response_text)
         except Exception as e:
-            await interaction.followup.send("I'm having trouble connecting to my AI brain, please try again!")
+            error_msg = str(e)
             print(f"[ERROR] Ask slash command error: {e}")
             import traceback
             traceback.print_exc()
+            
+            # Provide helpful error message
+            if "CLAUDE_API_KEY" in error_msg or "api key" in error_msg.lower():
+                await interaction.followup.send(
+                    "❌ **Error:** Claude API key is not configured or invalid.\n\n"
+                    "Please check your `.env` file and ensure `CLAUDE_API_KEY` is set correctly.\n"
+                    "The bot will use basic responses until the API is configured."
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ **Error:** I'm having trouble processing your request right now.\n\n"
+                    "Please try again in a moment, or use `!help` to see available commands."
+                )
     
     @app_commands.command(name="stats", description="Show bot statistics")
     async def stats_slash(self, interaction: discord.Interaction):
