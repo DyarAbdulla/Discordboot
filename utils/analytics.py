@@ -467,3 +467,4 @@ class AnalyticsTracker:
                 "days_analyzed": days_so_far
             }
 
+

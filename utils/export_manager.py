@@ -247,3 +247,4 @@ class ExportManager:
         else:
             raise ValueError(f"Unsupported format: {format}. Use: json, csv, txt, pdf")
 
+

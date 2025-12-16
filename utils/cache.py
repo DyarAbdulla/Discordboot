@@ -198,3 +198,4 @@ class CacheManager:
             breakdown[query_type] = breakdown.get(query_type, 0) + 1
         return breakdown
 
+
