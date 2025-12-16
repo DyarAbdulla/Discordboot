@@ -284,3 +284,4 @@ If you encounter issues:
 3. Test APIs individually with `/api test`
 4. Check Discord bot permissions and intents
 
+
