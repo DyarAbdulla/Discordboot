@@ -956,7 +956,7 @@ class AIBootBot(commands.Bot):
                             )
                             # Check budget
                             await self._check_budget_alerts()
-                            except Exception as e:
+                        except Exception as e:
                             print(
                                 f"[ERROR] Failed to track image analysis usage: {e}")
 
