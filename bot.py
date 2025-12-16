@@ -2450,13 +2450,13 @@ class AIBootBot(commands.Bot):
                                 f"[OK] ✅ Claude handler reinitialized successfully!")
                             try:
                             follow_up_note_retry = None
-                            if is_follow_up and follow_up_context:
+                                if is_follow_up and follow_up_context:
                                 follow_up_note_retry = (
-                                    f"This appears to be a follow-up question related to the previous conversation. "
-                                    f"The user's last question was answered with: '{follow_up_context[:200]}...' "
-                                    f"Reference this context naturally in your response if relevant."
+                                f"This appears to be a follow-up question related to the previous conversation. "
+                                f"The user's last question was answered with: '{follow_up_context[:200]}...' "
+                                f"Reference this context naturally in your response if relevant."
                                 )
-                            result = await self.claude_handler.generate_response(
+                                result = await self.claude_handler.generate_response(
                                 messages=api_messages,
                                 user_name=message.author.display_name,
                                 summaries=summary_texts if summary_texts else None,
@@ -2464,25 +2464,25 @@ class AIBootBot(commands.Bot):
                                 kurdish_dialect=kurdish_dialect,
                                 user_facts=user_facts,
                                 follow_up_context=follow_up_note_retry
-                            )
-                            if result["success"]:
+                                )
+                                if result["success"]:
                                 response_text = result["response"]
                                 used_claude = True
                                 tokens_used = result.get("tokens_used", 0)
                                 model_used = self.claude_handler.model
                                 self.claude_responses += 1
                                 print(
-                                    f"[DEBUG] ✅ Claude API success after reinit! Response length: {len(response_text)}")
-                            else:
+                                f"[DEBUG] ✅ Claude API success after reinit! Response length: {len(response_text)}")
+                                else:
                                 # Use Claude's user-friendly error message
                                 if result.get('response') and result.get('user_friendly'):
-                                    response_text = result['response']
+                                response_text = result['response']
                                 else:
-                                    response_text = "I'm having trouble connecting. Please try again in a moment. 😊"
+                                response_text = "I'm having trouble connecting. Please try again in a moment. 😊"
                                 model_used = "static_fallback"
                                 self.fallback_responses += 1
                             except Exception as e:
-                            print(
+                                print(
                                 f"[ERROR] Failed to reinitialize Claude: {e}")
                             # Fall through to static response
                             if detected_language == 'ku':
