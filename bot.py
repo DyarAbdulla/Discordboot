@@ -740,7 +740,7 @@ class AIBootBot(commands.Bot):
 
                                 print(
                                     f"[ALERT] Sent error alert to owner: {self.error_count_recent} errors")
-                            except Exception as e:
+                        except Exception as e:
                             print(
                                 f"[ERROR] Failed to send error alert to owner: {e}")
         except Exception as e:
