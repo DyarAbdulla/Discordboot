@@ -65,7 +65,18 @@ class APIManager:
         self.provider_stats = {}
         self.cost_tracking = {}
         self.budget_limits = {}
-        self.primary_provider = os.getenv("PRIMARY_API", "claude").lower()
+        # Get PRIMARY_API and clean it (handle malformed values)
+        primary_api_raw = os.getenv("PRIMARY_API", "claude")
+        # Clean malformed values like: ""claude"PRIMARY_API=claude" -> "claude"
+        if primary_api_raw:
+            # Remove extra quotes and duplicate text
+            primary_api_raw = primary_api_raw.strip('"').strip("'")
+            # If it contains "PRIMARY_API=", extract the value after =
+            if "PRIMARY_API=" in primary_api_raw:
+                primary_api_raw = primary_api_raw.split("PRIMARY_API=")[-1].strip('"').strip("'")
+            # Take only the first word (in case of malformed input)
+            primary_api_raw = primary_api_raw.split()[0] if primary_api_raw.split() else "claude"
+        self.primary_provider = (primary_api_raw or "claude").lower()
         self.enable_fallback = os.getenv("ENABLE_FALLBACK", "true").lower() == "true"
         self.cost_optimization = os.getenv("COST_OPTIMIZATION", "true").lower() == "true"
         self.monthly_budget = float(os.getenv("MONTHLY_BUDGET", "50"))

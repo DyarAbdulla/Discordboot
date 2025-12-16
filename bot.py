@@ -7,6 +7,7 @@ Fixed syntax errors - all docstrings updated
 import discord
 from discord.ext import commands
 import os
+import sys
 import json
 import asyncio
 import sqlite3
@@ -18,6 +19,13 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 from typing import Optional, List, Dict
+
+# Ensure utils directory is in Python path (fixes ModuleNotFoundError)
+_bot_dir = os.path.dirname(os.path.abspath(__file__))
+_utils_path = os.path.join(_bot_dir, 'utils')
+if _utils_path not in sys.path:
+    sys.path.insert(0, _utils_path)
+    sys.path.insert(0, _bot_dir)
 
 # Load environment variables from .env file FIRST (before importing claude_handler)
 load_dotenv()
