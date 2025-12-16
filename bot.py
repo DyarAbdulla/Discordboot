@@ -2449,7 +2449,7 @@ class AIBootBot(commands.Bot):
                             print(
                                 f"[OK] ✅ Claude handler reinitialized successfully!")
                             try:
-                            follow_up_note_retry = None
+                                follow_up_note_retry = None
                                 if is_follow_up and follow_up_context:
                                 follow_up_note_retry = (
                                 f"This appears to be a follow-up question related to the previous conversation. "
