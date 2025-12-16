@@ -2448,7 +2448,7 @@ class AIBootBot(commands.Bot):
                             self.use_claude = True
                             print(
                                 f"[OK] ✅ Claude handler reinitialized successfully!")
-                            # Retry with Claude
+                            try:
                             follow_up_note_retry = None
                             if is_follow_up and follow_up_context:
                                 follow_up_note_retry = (
