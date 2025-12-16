@@ -127,7 +127,8 @@ class AIBootBot(commands.Bot):
             print("[INFO] Initializing Multi-API Manager...")
             self.api_manager = APIManager()
             print("[OK] Multi-API Manager initialized!")
-            # Keep Claude handler for backward compatibility
+            
+            # Keep Claude handler for backward compatibility (image analysis, etc.)
             if APIProvider.CLAUDE in self.api_manager.providers:
                 # Create a wrapper for backward compatibility
                 from claude_handler import ClaudeHandler
@@ -1554,9 +1555,18 @@ class AIBootBot(commands.Bot):
             except Exception as e:
                 print(f"[WARNING] Could not reset monthly budget alerts: {e}")
     
+    async def _test_apis_on_startup(self):
+        """Test all APIs on startup"""
+        if self.api_manager:
+            try:
+                await asyncio.sleep(2)  # Wait a bit for bot to be ready
+                await self.api_manager.test_on_startup()
+            except Exception as e:
+                print(f"[WARNING] Failed to test APIs on startup: {e}")
+    
     async def on_ready(self):
         """Called when bot is ready and connected"""
-        mode = "Claude AI" if self.use_claude else "Static Responses (Fallback)"
+        mode = "Multi-API" if self.api_manager else ("Claude AI" if self.use_claude else "Static Responses (Fallback)")
         
         print(f"\n{'='*50}")
         print(f"AI Boot is ready!")
@@ -1564,9 +1574,109 @@ class AIBootBot(commands.Bot):
         print(f"Bot ID: {self.user.id}")
         print(f"Servers: {len(self.guilds)}")
         print(f"Mode: {mode}")
-        if self.use_claude and self.claude_handler:
+        if self.api_manager:
+            providers = [p.value for p in self.api_manager.providers.keys()]
+            print(f"Available APIs: {', '.join(providers) if providers else 'None'}")
+            # Test APIs on startup
+            asyncio.create_task(self._test_apis_on_startup())
+        elif self.use_claude and self.claude_handler:
             print(f"Claude Model: {self.claude_handler.model}")
         print(f"{'='*50}\n")
+    
+    def _build_system_prompt(
+        self,
+        user_name: Optional[str] = None,
+        summaries: Optional[List[str]] = None,
+        detected_language: Optional[str] = None,
+        kurdish_dialect: Optional[str] = None,
+        user_facts: Optional[List[Dict[str, any]]] = None,
+        follow_up_context: Optional[str] = None
+    ) -> str:
+        """Build system prompt for API manager (similar to Claude handler)"""
+        base_prompt = (
+            "You are AI Boot, a friendly and helpful Discord bot assistant. "
+            "You have a professional yet warm personality - be knowledgeable and reliable, but also approachable and friendly. "
+            "Use emojis occasionally (😊, 👍, ✨, 💡) to add friendliness, but don't overuse them. "
+            "Answer questions directly and completely. Don't ask for clarification - provide helpful answers based on context. "
+            "Be conversational but get to the point quickly. Keep responses concise (max 300 tokens) and Discord-friendly.\n\n"
+            
+            "📝 RESPONSE FORMATTING:\n"
+            "- Use bullet points (•) for lists when helpful\n"
+            "- Structure longer responses with clear sections\n"
+            "- Use line breaks for readability\n"
+            "- Keep paragraphs short (2-3 sentences max)\n"
+            "- Format code/technical terms with backticks when appropriate\n\n"
+            
+            "💬 CONVERSATION FLOW GUIDELINES:\n"
+            "- Maintain natural conversation flow across multiple messages\n"
+            "- Reference previous answers when relevant: 'As I mentioned earlier...', 'Building on what we discussed...'\n"
+            "- If the user asks a follow-up question within 2 minutes, treat it as related to the previous topic\n"
+            "- Ask relevant follow-up questions when appropriate to keep conversation engaging\n"
+            "- Connect current questions to previous context naturally\n"
+            "- If the user asks about something you already explained, briefly reference it: 'Like I said before...'\n"
+            "- Maintain topic continuity - don't abruptly change subjects unless the user does\n"
+            "- Remember the last 10 messages in the conversation for context\n\n"
+            
+            "🌍 MULTILINGUAL SUPPORT:\n"
+            "You support Kurdish (Sorani and Kurmanji dialects), English, and Arabic.\n"
+            "ALWAYS respond in the SAME LANGUAGE the user uses. Auto-detect their language and match it exactly.\n"
+            "When a user speaks Kurdish, respond FULLY in Kurdish using the same dialect.\n"
+            "For mixed languages, match the user's primary language preference.\n"
+            "For error messages, use the user's detected language.\n\n"
+            
+            "🟥⬜🟩☀️ KURDISH LANGUAGE GUIDELINES (Kurdistan Flag: Red-White-Green with Sun):\n"
+            "• Sorani (Central Kurdish): Uses Arabic script (ئە, پ, ژ, گ, چ, ۆ, ش)\n"
+            "  Example: 'سڵاو، چۆنی؟' → Respond: 'سڵاو! من باشم، سوپاس. تۆ چۆنی؟'\n"
+            "• Kurmanji (Northern Kurdish): Uses Latin script (ç, ş, ê, î, û)\n"
+            "  Example: 'Merheba, çawa yî?' → Respond: 'Merheba! Ez baş im, spas. Tu çawa yî?'\n"
+            "• Use culturally appropriate greetings and expressions\n"
+            "• Be respectful and warm in Kurdish conversations\n"
+            "• Common Sorani greetings: سڵاو (hello), چۆنی (how are you), سوپاس (thanks)\n"
+            "• Common Kurmanji greetings: Merheba (hello), Çawa yî (how are you), Spas (thanks)\n"
+            "• IMPORTANT: When showing language flags in translations, use 🟥⬜🟩☀️ for Kurdish (both Sorani and Kurmanji) to represent the Kurdistan flag colors (red, white, green with sun)\n\n"
+            
+            "⚠️ ERROR HANDLING:\n"
+            "If you encounter an error or can't provide an answer, respond in the user's language:\n"
+            "- English: 'I'm having trouble connecting. Please try again in a moment.'\n"
+            "- Kurdish (Sorani): 'ببورە، هەندێک کێشە هەیە. تکایە دواتر هەوڵ بدەوە.'\n"
+            "- Kurdish (Kurmanji): 'Bibûre, hinek kêşe heye. Tika duar hewl bide.'\n"
+            "- Arabic: 'أواجه مشكلة في الاتصال. يرجى المحاولة مرة أخرى في لحظة.'\n"
+            "Never expose technical error details to users - keep messages friendly and simple."
+        )
+        
+        # Add summaries (long-term memory) to system prompt
+        if summaries:
+            base_prompt += "\n\nPrevious conversation summaries (for context):\n"
+            for summary in summaries[:5]:  # Limit to 5 summaries
+                base_prompt += f"- {summary}\n"
+            base_prompt += "\nUse these summaries to remember past conversations, but focus on the current conversation."
+        
+        # Add user name to system prompt if provided
+        if user_name:
+            base_prompt += f"\n\nThe user you're talking to is: {user_name}"
+        
+        # Add user facts for personalization
+        if user_facts:
+            facts_text = "\n\nThings I know about this user (use these to personalize responses):\n"
+            for fact in user_facts[:15]:  # Limit to top 15 facts
+                facts_text += f"- {fact.get('fact_key', 'unknown').title()}: {fact.get('fact_value', '')}\n"
+            base_prompt += facts_text
+            base_prompt += "\nUse these facts naturally in your responses when relevant. Don't mention that you're using stored facts - just incorporate them naturally."
+        
+        # Add follow-up context if this is a follow-up question
+        if follow_up_context:
+            base_prompt += f"\n\n{follow_up_context}"
+        
+        # Add language detection context
+        if detected_language == 'ku':
+            if kurdish_dialect:
+                base_prompt += f"\n\nIMPORTANT: The user is speaking Kurdish ({kurdish_dialect} dialect). Respond FULLY in Kurdish using the {kurdish_dialect} dialect. Match their language exactly."
+            else:
+                base_prompt += "\n\nIMPORTANT: The user is speaking Kurdish. Respond FULLY in Kurdish. Match their dialect (Sorani or Kurmanji) based on their script and expressions."
+        elif detected_language:
+            base_prompt += f"\n\nNote: User language detected as {detected_language}. Respond in the same language if appropriate."
+        
+        return base_prompt
         
         # Sync slash commands (backup sync in case setup_hook didn't work)
         try:
@@ -1905,8 +2015,48 @@ class AIBootBot(commands.Bot):
                         else:
                             self.budget_exceeded = False
                 
-                # ALWAYS try Claude API if available
-                if self.use_claude and self.claude_handler:
+                # Use Multi-API Manager if available, otherwise fallback to Claude handler
+                if self.api_manager:
+                    print(f"[DEBUG] Using Multi-API Manager for: {content[:50]}...")
+                    if detected_language == 'ku':
+                        print(f"[DEBUG] Language: Kurdish ({kurdish_dialect or 'general'})")
+                    
+                    # Add follow-up context to system prompt if this is a follow-up question
+                    follow_up_note = None
+                    if is_follow_up and follow_up_context:
+                        follow_up_note = (
+                            f"This appears to be a follow-up question related to the previous conversation. "
+                            f"The user's last question was answered with: '{follow_up_context[:200]}...' "
+                            f"Reference this context naturally in your response if relevant."
+                        )
+                    
+                    # Build system prompt
+                    system_prompt = self._build_system_prompt(
+                        user_name=message.author.display_name,
+                        summaries=summary_texts if summary_texts else None,
+                        detected_language=detected_language,
+                        kurdish_dialect=kurdish_dialect,
+                        user_facts=user_facts,
+                        follow_up_context=follow_up_note
+                    )
+                    
+                    # Call API Manager with intelligent routing
+                    result = await self.api_manager.generate_response(
+                        messages=api_messages,
+                        system_prompt=system_prompt,
+                        user_name=message.author.display_name,
+                        detected_language=detected_language,
+                        has_image=False,
+                        query=content,
+                        max_tokens=300,
+                        temperature=0.7
+                    )
+                    
+                    # Extract provider info for logging
+                    provider_used = result.get("provider", "unknown")
+                    print(f"[DEBUG] {provider_used.capitalize()} API used for this query")
+                    
+                elif self.use_claude and self.claude_handler:
                     print(f"[DEBUG] ✅ Claude is available - calling API for: {content[:50]}...")
                     print(f"[DEBUG] use_claude={self.use_claude}, claude_handler={self.claude_handler is not None}")
                     if detected_language == 'ku':
@@ -1930,20 +2080,30 @@ class AIBootBot(commands.Bot):
                         user_facts=user_facts,
                         follow_up_context=follow_up_note
                     )
+                    # Add provider info for consistency
+                    result["provider"] = "claude"
                     
                     if result["success"]:
                         response_text = result["response"]
                         used_claude = True
-                        tokens_used = result.get("tokens_used", 0)
-                        model_used = self.claude_handler.model
-                        self.claude_responses += 1
-                        print(f"[DEBUG] Claude API success! Response length: {len(response_text)}")
+                        tokens_used = result.get("input_tokens", 0) + result.get("output_tokens", result.get("tokens_used", 0))
+                        provider_used = result.get("provider", "claude")
+                        model_used = f"{provider_used}-api"
+                        if self.api_manager:
+                            self.claude_responses += 1  # Track as API response
+                        else:
+                            self.claude_responses += 1
+                        print(f"[DEBUG] {provider_used.capitalize()} API success! Response length: {len(response_text)}")
                         
                         # Track API usage with accurate cost calculation
                         if self.statistics_tracker:
                             try:
                                 input_tokens = result.get("input_tokens", int(tokens_used * 0.7))
                                 output_tokens = result.get("output_tokens", tokens_used - input_tokens)
+                                
+                                # Use provider name as model if from API manager
+                                if self.api_manager:
+                                    model_used = f"{provider_used}-api"
                                 
                                 self.statistics_tracker.track_api_usage(
                                     tokens_used=tokens_used,
@@ -1981,10 +2141,12 @@ class AIBootBot(commands.Bot):
                         # Track API failure
                         if self.statistics_tracker:
                             try:
+                                provider_used = result.get("provider", "unknown")
+                                model_used = f"{provider_used}-api" if self.api_manager else (self.claude_handler.model if self.claude_handler else "unknown")
                                 self.statistics_tracker.track_api_usage(
                                     tokens_used=0,
                                     success=False,
-                                    model_used=self.claude_handler.model if self.claude_handler else "unknown",
+                                    model_used=model_used,
                                     input_tokens=0,
                                     output_tokens=0,
                                     user_id=user_id,
@@ -2198,6 +2360,15 @@ class AIBootBot(commands.Bot):
                             inline=False
                         )
                     
+                    # Add API provider info to footer if using API manager
+                    if self.api_manager and 'result' in locals() and result.get("provider"):
+                        provider_name = result.get("provider", "unknown").capitalize()
+                        current_footer = embed.footer.text if embed.footer else ""
+                        if current_footer:
+                            embed.set_footer(text=f"{current_footer} | Powered by {provider_name} API")
+                        else:
+                            embed.set_footer(text=f"Powered by {provider_name} API")
+                    
                     # Send embed response
                     response_sent = False
                     try:
@@ -2220,6 +2391,11 @@ class AIBootBot(commands.Bot):
                                 for q in question_suggestions:
                                     response_text_with_time += f"❓ {q}\n"
                             
+                            # Add API provider info to footer if using API manager
+                            if self.api_manager and result.get("provider"):
+                                provider_name = result.get("provider", "unknown").capitalize()
+                                response_text_with_time += f"\n\n*Powered by {provider_name} API*"
+                            
                             await message.reply(response_text_with_time)
                             response_sent = True
                         except:
@@ -2235,6 +2411,12 @@ class AIBootBot(commands.Bot):
                             max_length = 2000 - len(response_time_text) - 3
                             response_text = response_text[:max_length] + "..."
                         response_text += f"\n\n{response_time_text}"
+                    
+                    # Add API provider info to footer if using API manager
+                    if self.api_manager and 'result' in locals() and result.get("provider"):
+                        provider_name = result.get("provider", "unknown").capitalize()
+                        if len(response_text) + len(f"\n\n*Powered by {provider_name} API*") <= 2000:
+                            response_text += f"\n\n*Powered by {provider_name} API*"
                     
                     # Send response (only once)
                     response_sent = False

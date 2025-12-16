@@ -22,20 +22,9 @@ class APICommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="api", description="API management commands")
-    @app_commands.describe(action="Action to perform")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="Status", value="status"),
-        app_commands.Choice(name="Costs", value="costs"),
-        app_commands.Choice(name="Test", value="test"),
-        app_commands.Choice(name="Stats", value="stats")
-    ])
-    async def api_command(
-        self,
-        interaction: discord.Interaction,
-        action: app_commands.Choice[str]
-    ):
-        """API management command"""
+    @app_commands.command(name="api-status", description="Show all API health status")
+    async def api_status_command(self, interaction: discord.Interaction):
+        """Show API status"""
         if not hasattr(self.bot, 'api_manager') or not self.bot.api_manager:
             await interaction.response.send_message(
                 "❌ API Manager not available!",
@@ -44,15 +33,33 @@ class APICommands(commands.Cog):
             return
         
         await interaction.response.defer()
+        await self._api_status(interaction)
+    
+    @app_commands.command(name="api-test", description="Test all APIs and report")
+    async def api_test_command(self, interaction: discord.Interaction):
+        """Test all APIs"""
+        if not hasattr(self.bot, 'api_manager') or not self.bot.api_manager:
+            await interaction.response.send_message(
+                "❌ API Manager not available!",
+                ephemeral=True
+            )
+            return
         
-        if action.value == "status":
-            await self._api_status(interaction)
-        elif action.value == "costs":
-            await self._api_costs(interaction)
-        elif action.value == "test":
-            await self._api_test(interaction)
-        elif action.value == "stats":
-            await self._api_stats(interaction)
+        await interaction.response.defer()
+        await self._api_test(interaction)
+    
+    @app_commands.command(name="api-costs", description="Show API costs today/week/month")
+    async def api_costs_command(self, interaction: discord.Interaction):
+        """Show API costs"""
+        if not hasattr(self.bot, 'api_manager') or not self.bot.api_manager:
+            await interaction.response.send_message(
+                "❌ API Manager not available!",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer()
+        await self._api_costs(interaction)
     
     async def _api_status(self, interaction: discord.Interaction):
         """Show API status"""
@@ -75,12 +82,13 @@ class APICommands(commands.Cog):
                 else:
                     status_text = "⚪ Unknown"
                 
+                response_time_str = f"{info['avg_response_time']:.2f}s" if info['avg_response_time'] > 0 else "N/A"
                 value = (
                     f"**Status**: {status_text}\n"
                     f"**Calls**: {info['calls']:,}\n"
                     f"**Errors**: {info['errors']:,}\n"
                     f"**Success Rate**: {info['success_rate']:.1f}%\n"
-                    f"**Avg Response**: {info['avg_response_time']:.2f}s\n"
+                    f"**Response Time**: {response_time_str}\n"
                     f"**Monthly Cost**: ${info['monthly_cost']:.2f}"
                 )
                 
@@ -285,4 +293,5 @@ class APICommands(commands.Cog):
 async def setup(bot):
     """Setup function for cog"""
     await bot.add_cog(APICommands(bot))
+
 

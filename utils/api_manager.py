@@ -71,10 +71,17 @@ class APIManager:
         self.monthly_budget = float(os.getenv("MONTHLY_BUDGET", "50"))
         
         # Initialize providers
+        print("[INFO] Initializing Multi-API Manager...")
         self._init_claude()
         self._init_gemini()
         self._init_groq()
         self._init_openrouter()
+        
+        # Log initialization summary
+        active_count = sum(1 for p in self.providers.keys())
+        print(f"[INFO] Multi-API routing active - {active_count} provider(s) available")
+        if active_count > 0:
+            print(f"[INFO] Available providers: {', '.join([p.value for p in self.providers.keys()])}")
         
         # Initialize stats tracking
         for provider in APIProvider:
@@ -113,9 +120,10 @@ class APIManager:
                 max_retries=0
             )
             self.provider_stats[APIProvider.CLAUDE.value]["status"] = "active"
-            print("[OK] Claude API initialized")
+            print("[INFO] Claude API initialized successfully")
         except Exception as e:
             print(f"[ERROR] Failed to initialize Claude: {e}")
+            self.provider_stats[APIProvider.CLAUDE.value]["status"] = "error"
     
     def _init_gemini(self):
         """Initialize Gemini API"""
@@ -132,9 +140,10 @@ class APIManager:
             genai.configure(api_key=api_key)
             self.providers[APIProvider.GEMINI] = genai.GenerativeModel("gemini-pro")
             self.provider_stats[APIProvider.GEMINI.value]["status"] = "active"
-            print("[OK] Gemini API initialized")
+            print("[INFO] Gemini API initialized successfully")
         except Exception as e:
             print(f"[ERROR] Failed to initialize Gemini: {e}")
+            self.provider_stats[APIProvider.GEMINI.value]["status"] = "error"
     
     def _init_groq(self):
         """Initialize Groq API"""
@@ -150,9 +159,10 @@ class APIManager:
         try:
             self.providers[APIProvider.GROQ] = Groq(api_key=api_key)
             self.provider_stats[APIProvider.GROQ.value]["status"] = "active"
-            print("[OK] Groq API initialized")
+            print("[INFO] Groq API initialized successfully")
         except Exception as e:
             print(f"[ERROR] Failed to initialize Groq: {e}")
+            self.provider_stats[APIProvider.GROQ.value]["status"] = "error"
     
     def _init_openrouter(self):
         """Initialize OpenRouter API"""
@@ -172,9 +182,10 @@ class APIManager:
                 timeout=60.0
             )
             self.provider_stats[APIProvider.OPENROUTER.value]["status"] = "active"
-            print("[OK] OpenRouter API initialized")
+            print("[INFO] OpenRouter API initialized successfully")
         except Exception as e:
             print(f"[ERROR] Failed to initialize OpenRouter: {e}")
+            self.provider_stats[APIProvider.OPENROUTER.value]["status"] = "error"
     
     def _classify_query(self, query: str, messages: List[Dict]) -> QueryType:
         """
@@ -376,6 +387,11 @@ class APIManager:
         # Select primary provider
         primary_provider = self._get_provider_for_query(query_type, has_image)
         
+        # Log routing decision
+        if primary_provider:
+            query_type_str = query_type.value
+            print(f"[DEBUG] {query_type_str.capitalize()} query detected → Using {primary_provider.value.capitalize()}")
+        
         if not primary_provider:
             return {
                 "response": "I'm sorry, but no AI providers are currently available. Please check your API keys.",
@@ -403,8 +419,11 @@ class APIManager:
             providers_to_try.extend(self._get_fallback_chain(primary_provider))
         
         last_error = None
-        for provider in providers_to_try:
+        for idx, provider in enumerate(providers_to_try):
             try:
+                if idx > 0:
+                    print(f"[DEBUG] Fallback attempt {idx}: Trying {provider.value.capitalize()}")
+                
                 result = await self._call_provider(
                     provider=provider,
                     messages=messages,
@@ -431,12 +450,16 @@ class APIManager:
                 result["cost"] = cost
                 result["query_type"] = query_type.value
                 
+                print(f"[DEBUG] {provider.value.capitalize()} API success! Response length: {len(result.get('response', ''))}")
+                
                 return result
                 
             except Exception as e:
                 last_error = e
                 self.provider_stats[provider.value]["errors"] += 1
-                print(f"[ERROR] {provider.value} failed: {e}")
+                print(f"[ERROR] {provider.value.capitalize()} failed: {e}")
+                if idx < len(providers_to_try) - 1:
+                    print(f"[DEBUG] Trying next provider in fallback chain...")
                 continue
         
         # All providers failed
@@ -518,7 +541,7 @@ class APIManager:
         detected_language: Optional[str] = None,
         **kwargs
     ) -> Dict[str, any]:
-        """Call Gemini API"""
+        """Call Gemini API (runs in executor since it's sync)"""
         model = self.providers[APIProvider.GEMINI]
         
         # Convert messages format for Gemini
@@ -534,14 +557,17 @@ class APIManager:
             elif role == "assistant":
                 prompt_parts.append(f"Assistant: {content}")
         
-        # Generate response
-        response = model.generate_content(
-            prompt_parts,
-            generation_config={
-                "temperature": kwargs.get("temperature", 0.7),
-                "max_output_tokens": kwargs.get("max_tokens", 300)
-            }
-        )
+        # Run sync call in executor
+        loop = asyncio.get_event_loop()
+        def _generate():
+            return model.generate_content(
+                prompt_parts,
+                generation_config={
+                    "temperature": kwargs.get("temperature", 0.7),
+                    "max_output_tokens": kwargs.get("max_tokens", 300)
+                }
+            )
+        response = await loop.run_in_executor(None, _generate)
         
         response_text = response.text.strip()
         
@@ -563,7 +589,7 @@ class APIManager:
         detected_language: Optional[str] = None,
         **kwargs
     ) -> Dict[str, any]:
-        """Call Groq API"""
+        """Call Groq API (runs in executor since it's sync)"""
         client = self.providers[APIProvider.GROQ]
         
         # Format messages for Groq
@@ -572,11 +598,16 @@ class APIManager:
             formatted_messages.append({"role": "system", "content": system_prompt})
         formatted_messages.extend(messages)
         
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",  # Fast model
-            messages=formatted_messages,
-            temperature=kwargs.get("temperature", 0.7),
-            max_tokens=kwargs.get("max_tokens", 300)
+        # Run sync call in executor
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
+                model="llama-3.1-8b-instant",  # Fast model
+                messages=formatted_messages,
+                temperature=kwargs.get("temperature", 0.7),
+                max_tokens=kwargs.get("max_tokens", 300)
+            )
         )
         
         response_text = response.choices[0].message.content.strip()
@@ -693,6 +724,19 @@ class APIManager:
                     "success": False,
                     "error": str(e)
                 }
+        
+        return results
+    
+    async def test_on_startup(self):
+        """Test all providers on startup"""
+        print("[INFO] Testing all API providers on startup...")
+        results = await self.test_all_providers()
+        
+        for provider, result in results.items():
+            if result.get("success"):
+                print(f"[INFO] {provider.capitalize()} API test: ✅ Success ({result.get('response_time', 0):.2f}s)")
+            else:
+                print(f"[WARNING] {provider.capitalize()} API test: ❌ Failed - {result.get('error', 'Unknown error')}")
         
         return results
 
