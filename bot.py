@@ -2454,8 +2454,8 @@ class AIBootBot(commands.Bot):
                                 f"This appears to be a follow-up question related to the previous conversation. "
                                 f"The user's last question was answered with: '{follow_up_context[:200]}...' "
                                 f"Reference this context naturally in your response if relevant."
-                                )
-                                    result = await self.claude_handler.generate_response(
+                                    )
+                                result = await self.claude_handler.generate_response(
                                 messages=api_messages,
                                 user_name=message.author.display_name,
                                 summaries=summary_texts if summary_texts else None,
