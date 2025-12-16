@@ -130,6 +130,7 @@ class AIBootBot(commands.Bot):
 
         # Initialize Multi-API Manager (Priority 1 - Most Important!)
         self.api_manager = None
+        self.api_initialization_complete = False
         try:
             from utils.api_manager import APIManager, APIProvider
             print("[INFO] Initializing Multi-API Manager...")
@@ -140,12 +141,8 @@ class AIBootBot(commands.Bot):
             if APIProvider.CLAUDE in self.api_manager.providers:
                 # Create a wrapper for backward compatibility
                 from claude_handler import ClaudeHandler
-                try:
-                    self.claude_handler = ClaudeHandler()
-                    self.use_claude = True
-                except:
-                    self.claude_handler = None
-                    self.use_claude = False
+                self.claude_handler = self._initialize_claude_handler_with_retry()
+                self.use_claude = self.claude_handler is not None
             else:
                 self.claude_handler = None
                 self.use_claude = False
@@ -162,35 +159,17 @@ class AIBootBot(commands.Bot):
         if not self.api_manager:
             claude_key = os.getenv("CLAUDE_API_KEY")
             if not claude_key:
-                print("[ERROR] CLAUDE_API_KEY not found in .env file!")
+                print("[ERROR] ❌ CLAUDE_API_KEY not found in .env file!")
                 print("[ERROR] Bot will use static responses")
             else:
                 print(f"[OK] CLAUDE_API_KEY found (length: {len(claude_key)})")
 
             if CLAUDE_AVAILABLE:
-                try:
-                    print("[INFO] Attempting to initialize Claude API handler...")
-                    self.claude_handler = ClaudeHandler()
-                    self.use_claude = True
-                    print("[OK] Claude API handler initialized successfully!")
-                    print(f"[OK] Using model: {self.claude_handler.model}")
-                except ValueError as e:
-                    print(f"[ERROR] Claude API key not configured: {e}")
-                    print("[ERROR] Bot will use static responses as fallback")
-                    self.use_claude = False
-                    self.claude_handler = None
-                except Exception as e:
-                    error_msg = str(e)
-                    print(f"[ERROR] Could not initialize Claude API: {e}")
-                    if "authentication" in error_msg.lower() or "api key" in error_msg.lower():
-                        print("[ERROR] API key appears to be invalid or expired")
-                    import traceback
-                    traceback.print_exc()
-                    self.use_claude = False
-                    self.claude_handler = None
+                self.claude_handler = self._initialize_claude_handler_with_retry()
+                self.use_claude = self.claude_handler is not None
             else:
                 print(
-                    "[ERROR] Claude handler module not available - using static responses")
+                    "[ERROR] ❌ Claude handler module not available - using static responses")
                 self.use_claude = False
                 self.claude_handler = None
 
@@ -381,6 +360,134 @@ class AIBootBot(commands.Bot):
                 "follow_up_timeout_minutes": 2
             }
 
+    def _initialize_claude_handler_with_retry(self, max_retries: int = 3) -> Optional[ClaudeHandler]:
+        """
+        Initialize Claude handler with automatic retry logic
+        
+        Args:
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            ClaudeHandler instance or None if all retries fail
+        """
+        if not CLAUDE_AVAILABLE:
+            print("[ERROR] ❌ Claude handler module not available")
+            return None
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"[INFO] Attempting to initialize Claude API handler (attempt {attempt + 1}/{max_retries})...")
+                handler = ClaudeHandler()
+                print("[OK] ✅ Claude API handler initialized successfully!")
+                print(f"[OK] Using model: {handler.model}")
+                return handler
+            except ValueError as e:
+                print(f"[ERROR] ❌ Claude API key not configured: {e}")
+                print("[ERROR] Bot will use static responses as fallback")
+                return None
+            except Exception as e:
+                error_msg = str(e)
+                if attempt < max_retries - 1:
+                    print(f"[WARNING] Claude initialization attempt {attempt + 1}/{max_retries} failed: {error_msg}")
+                    print(f"[INFO] Retrying in {2 ** attempt} seconds...")
+                    import time
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    print(f"[ERROR] ❌ Failed to initialize Claude API after {max_retries} attempts: {e}")
+                    if "authentication" in error_msg.lower() or "api key" in error_msg.lower():
+                        print("[ERROR] API key appears to be invalid or expired")
+                    import traceback
+                    traceback.print_exc()
+                    return None
+        
+        return None
+
+    async def _initialize_apis_with_health_checks(self):
+        """
+        Initialize all APIs with health checks and wait for them to be ready
+        """
+        print("\n" + "="*50)
+        print("[INFO] Starting API initialization with health checks...")
+        print("="*50)
+        
+        # Initialize API manager if not already done
+        if not self.api_manager:
+            try:
+                from utils.api_manager import APIManager, APIProvider
+                print("[INFO] Initializing Multi-API Manager...")
+                self.api_manager = APIManager()
+                print("[OK] Multi-API Manager initialized!")
+            except Exception as e:
+                print(f"[ERROR] ❌ Failed to initialize API Manager: {e}")
+                self.api_manager = None
+        
+        # Perform health checks on all providers
+        if self.api_manager:
+            print("[INFO] Performing health checks on all API providers...")
+            health_results = await self.api_manager.health_check_all(max_retries=3)
+            
+            # Log health check summary
+            healthy_count = sum(1 for r in health_results.values() if r.get("success"))
+            total_count = len(health_results)
+            
+            print(f"\n[INFO] Health check summary: {healthy_count}/{total_count} providers healthy")
+            
+            # Try to reinitialize failed providers
+            from utils.api_manager import APIProvider
+            for provider_name, result in health_results.items():
+                if not result.get("success"):
+                    try:
+                        provider = APIProvider(provider_name)
+                        print(f"[INFO] Attempting to reinitialize {provider_name}...")
+                        if provider == APIProvider.CLAUDE:
+                            self.api_manager._init_claude(max_retries=2)
+                        elif provider == APIProvider.GEMINI:
+                            self.api_manager._init_gemini(max_retries=2)
+                        elif provider == APIProvider.GROQ:
+                            self.api_manager._init_groq(max_retries=2)
+                        elif provider == APIProvider.OPENROUTER:
+                            self.api_manager._init_openrouter(max_retries=2)
+                    except Exception as e:
+                        print(f"[WARNING] Could not reinitialize {provider_name}: {e}")
+        
+        # Initialize/reinitialize Claude handler if needed
+        if self.api_manager:
+            from utils.api_manager import APIProvider
+            if APIProvider.CLAUDE in self.api_manager.providers and not self.claude_handler:
+                print("[INFO] Initializing Claude handler for backward compatibility...")
+                self.claude_handler = self._initialize_claude_handler_with_retry(max_retries=3)
+                self.use_claude = self.claude_handler is not None
+        
+        # Final status summary
+        print("\n" + "="*50)
+        print("[INFO] API Initialization Complete")
+        print("="*50)
+        
+        if self.api_manager:
+            providers = [p.value for p in self.api_manager.providers.keys()]
+            status_map = {p.value: self.api_manager.provider_stats[p.value]["status"] for p in self.api_manager.providers.keys()}
+            
+            for provider_name, status in status_map.items():
+                if status == "active":
+                    print(f"[OK] ✅ {provider_name.capitalize()}: Active")
+                elif status == "initialized":
+                    print(f"[OK] ✅ {provider_name.capitalize()}: Initialized (ready for health check)")
+                elif status == "error":
+                    print(f"[ERROR] ❌ {provider_name.capitalize()}: Failed")
+                elif status == "missing_key":
+                    print(f"[WARNING] ⚠️ {provider_name.capitalize()}: Missing API key")
+                else:
+                    print(f"[INFO] ⚪ {provider_name.capitalize()}: {status}")
+        
+        if self.claude_handler:
+            print(f"[OK] ✅ Claude Handler: Ready (Model: {self.claude_handler.model})")
+        else:
+            print(f"[WARNING] ⚠️ Claude Handler: Not available")
+        
+        print("="*50 + "\n")
+        
+        self.api_initialization_complete = True
+
     async def setup_hook(self):
         """Called when bot is starting up"""
         # Get application info to find owner
@@ -459,6 +566,14 @@ class AIBootBot(commands.Bot):
         except Exception as e:
             print(f"[WARNING] Export manager not available: {e}")
             self.export_manager = None
+
+        # Initialize APIs with health checks (wait for initialization)
+        try:
+            await self._initialize_apis_with_health_checks()
+        except Exception as e:
+            print(f"[ERROR] ❌ API initialization failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         # Sync slash commands tree
         try:
@@ -1613,9 +1728,37 @@ class AIBootBot(commands.Bot):
                 await self.api_manager.test_on_startup()
             except Exception as e:
                 print(f"[WARNING] Failed to test APIs on startup: {e}")
+        
+        # Also test Claude handler if available
+        if self.claude_handler:
+            try:
+                print("[INFO] Testing Claude handler API...")
+                test_result = await self.claude_handler.test_api_key()
+                if test_result.get("success"):
+                    print("[OK] ✅ Claude handler API test: Success")
+                else:
+                    print(f"[ERROR] ❌ Claude handler API test: Failed - {test_result.get('error', 'Unknown')}")
+                    # Try to reinitialize
+                    print("[INFO] Attempting to reinitialize Claude handler...")
+                    self.claude_handler = self._initialize_claude_handler_with_retry(max_retries=2)
+                    self.use_claude = self.claude_handler is not None
+            except Exception as e:
+                print(f"[WARNING] Failed to test Claude handler: {e}")
 
     async def on_ready(self):
         """Called when bot is ready and connected"""
+        # Wait for API initialization if not complete
+        if not self.api_initialization_complete:
+            print("[INFO] Waiting for API initialization to complete...")
+            max_wait = 30  # Maximum wait time in seconds
+            waited = 0
+            while not self.api_initialization_complete and waited < max_wait:
+                await asyncio.sleep(1)
+                waited += 1
+            
+            if not self.api_initialization_complete:
+                print("[WARNING] API initialization timed out, continuing anyway...")
+        
         mode = "Multi-API" if self.api_manager else (
             "Claude AI" if self.use_claude else "Static Responses (Fallback)")
 
@@ -1629,7 +1772,7 @@ class AIBootBot(commands.Bot):
             providers = [p.value for p in self.api_manager.providers.keys()]
             print(
                 f"Available APIs: {', '.join(providers) if providers else 'None'}")
-            # Test APIs on startup
+            # Run additional startup tests
             asyncio.create_task(self._test_apis_on_startup())
         elif self.use_claude and self.claude_handler:
             print(f"Claude Model: {self.claude_handler.model}")
@@ -2300,11 +2443,11 @@ class AIBootBot(commands.Bot):
                     if claude_key and CLAUDE_AVAILABLE and not self.claude_handler:
                         print(
                             f"[INFO] Attempting to reinitialize Claude handler...")
-                        try:
-                            self.claude_handler = ClaudeHandler()
+                        self.claude_handler = self._initialize_claude_handler_with_retry(max_retries=2)
+                        if self.claude_handler:
                             self.use_claude = True
                             print(
-                                f"[OK] Claude handler reinitialized successfully!")
+                                f"[OK] ✅ Claude handler reinitialized successfully!")
                             # Retry with Claude
                             follow_up_note_retry = None
                             if is_follow_up and follow_up_context:
@@ -2469,15 +2612,21 @@ class AIBootBot(commands.Bot):
 
                     # Add API provider info to footer if using API manager
                     if self.api_manager and 'result' in locals() and result.get("provider"):
-                        provider_name = result.get(
-                            "provider", "unknown").capitalize()
+                        provider_raw = result.get("provider", "unknown").lower()
+                        # Special attribution for DeepSeek and Gemini
+                        if provider_raw == "deepseek":
+                            provider_name = "🧮 DeepSeek R1"
+                        elif provider_raw == "gemini":
+                            provider_name = "⚡ Gemini 2.0 Flash"
+                        else:
+                            provider_name = result.get("provider", "unknown").capitalize() + " API"
                         current_footer = embed.footer.text if embed.footer else ""
                         if current_footer:
                             embed.set_footer(
-                                text=f"{current_footer} | Powered by {provider_name} API")
+                                text=f"{current_footer} | Powered by {provider_name}")
                         else:
                             embed.set_footer(
-                                text=f"Powered by {provider_name} API")
+                                text=f"Powered by {provider_name}")
 
                     # Send embed response
                     response_sent = False
@@ -2505,9 +2654,15 @@ class AIBootBot(commands.Bot):
 
                             # Add API provider info to footer if using API manager
                             if self.api_manager and result.get("provider"):
-                                provider_name = result.get(
-                                    "provider", "unknown").capitalize()
-                                response_text_with_time += f"\n\n*Powered by {provider_name} API*"
+                                provider_raw = result.get("provider", "unknown").lower()
+                                # Special attribution for DeepSeek and Gemini
+                                if provider_raw == "deepseek":
+                                    response_text_with_time += "\n\n🧮 *Powered by DeepSeek R1*"
+                                elif provider_raw == "gemini":
+                                    response_text_with_time += "\n\n⚡ *Powered by Gemini 2.0 Flash*"
+                                else:
+                                    provider_name = result.get("provider", "unknown").capitalize()
+                                    response_text_with_time += f"\n\n*Powered by {provider_name} API*"
 
                             await message.reply(response_text_with_time)
                             response_sent = True
@@ -2527,10 +2682,17 @@ class AIBootBot(commands.Bot):
 
                     # Add API provider info to footer if using API manager
                     if self.api_manager and 'result' in locals() and result.get("provider"):
-                        provider_name = result.get(
-                            "provider", "unknown").capitalize()
-                        if len(response_text) + len(f"\n\n*Powered by {provider_name} API*") <= 2000:
-                            response_text += f"\n\n*Powered by {provider_name} API*"
+                        provider_raw = result.get("provider", "unknown").lower()
+                        # Special attribution for DeepSeek and Gemini
+                        if provider_raw == "deepseek":
+                            footer_text = "\n\n🧮 *Powered by DeepSeek R1*"
+                        elif provider_raw == "gemini":
+                            footer_text = "\n\n⚡ *Powered by Gemini 2.0 Flash*"
+                        else:
+                            provider_name = result.get("provider", "unknown").capitalize()
+                            footer_text = f"\n\n*Powered by {provider_name} API*"
+                        if len(response_text) + len(footer_text) <= 2000:
+                            response_text += footer_text
 
                     # Send response (only once)
                     response_sent = False
