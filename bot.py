@@ -740,7 +740,7 @@ class AIBootBot(commands.Bot):
 
                                 print(
                                     f"[ALERT] Sent error alert to owner: {self.error_count_recent} errors")
-                        except Exception as e:
+                            except Exception as e:
                             print(
                                 f"[ERROR] Failed to send error alert to owner: {e}")
         except Exception as e:
@@ -956,7 +956,7 @@ class AIBootBot(commands.Bot):
                             )
                             # Check budget
                             await self._check_budget_alerts()
-                        except Exception as e:
+                            except Exception as e:
                             print(
                                 f"[ERROR] Failed to track image analysis usage: {e}")
 
@@ -2481,7 +2481,7 @@ class AIBootBot(commands.Bot):
                                     response_text = "I'm having trouble connecting. Please try again in a moment. 😊"
                                 model_used = "static_fallback"
                                 self.fallback_responses += 1
-                        except Exception as e:
+                            except Exception as e:
                             print(
                                 f"[ERROR] Failed to reinitialize Claude: {e}")
                             # Fall through to static response
@@ -2724,7 +2724,7 @@ class AIBootBot(commands.Bot):
                             )
                             print(
                                 f"[OK] Conversation logged: User={message.author.display_name}, Tokens={tokens_used}, Model={model_used}")
-                        except Exception as e:
+                            except Exception as e:
                             print(f"[ERROR] Failed to log conversation: {e}")
 
                     # Add reaction to user's message
