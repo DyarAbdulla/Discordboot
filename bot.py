@@ -2450,8 +2450,7 @@ class AIBootBot(commands.Bot):
                                 f"[OK] ✅ Claude handler reinitialized successfully!")
                             try:
                                 follow_up_note_retry = None
-                                if is_follow_up and follow_up_context:
-                                follow_up_note_retry = (
+                                if is_follow_up and follow_up_context:                                    follow_up_note_retry = (
                                 f"This appears to be a follow-up question related to the previous conversation. "
                                 f"The user's last question was answered with: '{follow_up_context[:200]}...' "
                                 f"Reference this context naturally in your response if relevant."
