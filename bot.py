@@ -1582,6 +1582,21 @@ class AIBootBot(commands.Bot):
         elif self.use_claude and self.claude_handler:
             print(f"Claude Model: {self.claude_handler.model}")
         print(f"{'='*50}\n")
+        
+        # Sync slash commands (backup sync in case setup_hook didn't work)
+        try:
+            synced = await self.tree.sync()
+            if synced:
+                print(f"[OK] Synced {len(synced)} slash command(s) in on_ready")
+        except Exception as e:
+            print(f"[WARNING] Could not sync slash commands in on_ready: {e}")
+        
+        # Set bot status
+        activity = discord.Activity(
+            type=discord.ActivityType.listening,
+            name=f"{self.config.get('prefix', '!')}help or /help"
+        )
+        await self.change_presence(activity=activity)
     
     def _build_system_prompt(
         self,
@@ -1677,21 +1692,6 @@ class AIBootBot(commands.Bot):
             base_prompt += f"\n\nNote: User language detected as {detected_language}. Respond in the same language if appropriate."
         
         return base_prompt
-        
-        # Sync slash commands (backup sync in case setup_hook didn't work)
-        try:
-            synced = await self.tree.sync()
-            if synced:
-                print(f"[OK] Synced {len(synced)} slash command(s) in on_ready")
-        except Exception as e:
-            print(f"[WARNING] Could not sync slash commands in on_ready: {e}")
-        
-        # Set bot status
-        activity = discord.Activity(
-            type=discord.ActivityType.listening,
-            name=f"{self.config.get('prefix', '!')}help or /help"
-        )
-        await self.change_presence(activity=activity)
     
     async def on_message(self, message: discord.Message):
         """Handle incoming messages"""
