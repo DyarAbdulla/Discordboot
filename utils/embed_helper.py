@@ -85,11 +85,19 @@ class EmbedHelper:
         if api_provider:
             provider_emoji = {
                 "claude": "🧠",
-                "gemini": "💎",
-                "groq": "⚡",
-                "openrouter": "🌐"
+                "gemini": "⚡",  # Gemini 2.0 Flash - fastest!
+                "groq": "💨",
+                "openrouter": "🌐",
+                "deepseek": "🧮"
             }.get(api_provider.lower(), "🤖")
-            footer_parts.append(f"{provider_emoji} Powered by {api_provider.capitalize()}")
+            # Special naming for DeepSeek and Gemini
+            if api_provider.lower() == "deepseek":
+                provider_name = "DeepSeek R1"
+            elif api_provider.lower() == "gemini":
+                provider_name = "Gemini 2.0 Flash"
+            else:
+                provider_name = api_provider.capitalize()
+            footer_parts.append(f"{provider_emoji} Powered by {provider_name}")
         
         if response_time:
             footer_parts.append(f"⏱️ {response_time}")

@@ -56,7 +56,8 @@ Here's the complete list of all environment variables your bot needs:
 ### New Multi-API Keys:
 - `GEMINI_API_KEY` - Google Gemini API key
 - `GROQ_API_KEY` - Groq API key
-- `OPENROUTER_API_KEY` - OpenRouter API key
+- `OPENROUTER_API_KEY` - OpenRouter API key (also enables DeepSeek R1 🧮)
+- `DEEPSEEK_API_KEY` - (Optional) Direct DeepSeek API key (if not using OpenRouter)
 
 ### Configuration:
 - `PRIMARY_API` - Primary API provider (default: "claude")
@@ -141,6 +142,7 @@ Your bot now has access to:
 - 💎 **Gemini** - Free tier, great for simple queries
 - ⚡ **Groq** - Fastest responses
 - 🌐 **OpenRouter** - Backup/alternative models
+- 🧮 **DeepSeek R1** - Best for math, logic, and step-by-step reasoning (via OpenRouter)
 
 The bot will automatically route queries to the best API based on:
 - Query complexity

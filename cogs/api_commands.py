@@ -24,7 +24,7 @@ class APICommands(commands.Cog):
     
     @app_commands.command(name="api-status", description="Show all API health status")
     async def api_status_command(self, interaction: discord.Interaction):
-        """Show API status"""
+        """Show API status - displays all APIs and their health"""
         if not hasattr(self.bot, 'api_manager') or not self.bot.api_manager:
             await interaction.response.send_message(
                 "❌ API Manager not available!",
@@ -62,8 +62,18 @@ class APICommands(commands.Cog):
         await self._api_costs(interaction)
     
     async def _api_status(self, interaction: discord.Interaction):
-        """Show API status"""
-        status = self.bot.api_manager.get_provider_status()
+        """Show API status with health check information"""
+        # Perform fresh health check if API manager is available
+        health_results = None
+        if self.bot.api_manager:
+            try:
+                # Send a temporary message that we'll update
+                await interaction.followup.send("🔍 Checking API health... This may take a moment.")
+                health_results = await self.bot.api_manager.health_check_all(max_retries=1)
+            except Exception as e:
+                print(f"[ERROR] Health check failed: {e}")
+        
+        status = self.bot.api_manager.get_provider_status() if self.bot.api_manager else {}
         
         if EMBED_HELPER_AVAILABLE:
             embed = EmbedHelper.create_info_embed(
@@ -71,20 +81,55 @@ class APICommands(commands.Cog):
                 description="Current status of all API providers"
             )
             
+            # Add Claude handler status if available
+            if self.bot.claude_handler:
+                claude_health = "🟢 Healthy"
+                if health_results and "claude" in health_results:
+                    if not health_results["claude"].get("success"):
+                        claude_health = "🔴 Unhealthy"
+                embed.add_field(
+                    name="✅ Claude Handler",
+                    value=(
+                        f"**Status**: {claude_health}\n"
+                        f"**Model**: {self.bot.claude_handler.model}\n"
+                        f"**Available**: ✅ Yes"
+                    ),
+                    inline=True
+                )
+            
             for provider, info in status.items():
+                # Get health check result if available
+                health_status = ""
+                if health_results and provider in health_results:
+                    health_result = health_results[provider]
+                    if health_result.get("success"):
+                        health_status = f"🟢 Healthy ({health_result.get('response_time', 0):.2f}s)"
+                    else:
+                        health_status = f"🔴 Unhealthy - {health_result.get('error', 'Unknown error')[:50]}"
+                
                 status_emoji = "✅" if info["available"] else "❌"
                 status_text = "Active" if info["available"] else "Unavailable"
                 
                 if info["status"] == "active":
                     status_text = "🟢 Active"
+                elif info["status"] == "initialized":
+                    status_text = "🟡 Initialized"
                 elif info["status"] == "error":
                     status_text = "🔴 Error"
+                elif info["status"] == "missing_key":
+                    status_text = "⚪ Missing API Key"
                 else:
-                    status_text = "⚪ Unknown"
+                    status_text = f"⚪ {info['status'].capitalize()}"
                 
                 response_time_str = f"{info['avg_response_time']:.2f}s" if info['avg_response_time'] > 0 else "N/A"
                 value = (
                     f"**Status**: {status_text}\n"
+                )
+                
+                if health_status:
+                    value += f"**Health Check**: {health_status}\n"
+                
+                value += (
                     f"**Calls**: {info['calls']:,}\n"
                     f"**Errors**: {info['errors']:,}\n"
                     f"**Success Rate**: {info['success_rate']:.1f}%\n"
@@ -101,9 +146,20 @@ class APICommands(commands.Cog):
             await interaction.followup.send(embed=embed)
         else:
             text = "**🔌 API Status**\n\n"
+            
+            # Add Claude handler status
+            if self.bot.claude_handler:
+                text += f"**Claude Handler**: ✅ Available (Model: {self.bot.claude_handler.model})\n"
+            
             for provider, info in status.items():
                 text += f"**{provider.capitalize()}**: "
                 text += "✅ Available" if info["available"] else "❌ Unavailable"
+                text += f" | Status: {info['status']}"
+                if health_results and provider in health_results:
+                    if health_results[provider].get("success"):
+                        text += " | 🟢 Healthy"
+                    else:
+                        text += " | 🔴 Unhealthy"
                 text += f" | Calls: {info['calls']:,} | Success: {info['success_rate']:.1f}%\n"
             await interaction.followup.send(text)
     
