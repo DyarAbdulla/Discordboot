@@ -2209,215 +2209,227 @@ class AIBootBot(commands.Bot):
                             model_used = "static_fallback"
                             self.fallback_responses += 1
 
-                elif self.use_claude and self.claude_handler:
-                    print(
-                        f"[DEBUG] ✅ Claude is available - calling API for: {content[:50]}...")
-                    print(
-                        f"[DEBUG] use_claude={self.use_claude}, claude_handler={self.claude_handler is not None}")
-                    if detected_language == 'ku':
+                    elif self.use_claude and self.claude_handler:
                         print(
-                            f"[DEBUG] Language: Kurdish ({kurdish_dialect or 'general'})")
-                    # Add follow-up context to system prompt if this is a follow-up question
-                    follow_up_note = None
-                    if is_follow_up and follow_up_context:
-                        follow_up_note = (
-                            f"This appears to be a follow-up question related to the previous conversation. "
-                            f"The user's last question was answered with: '{follow_up_context[:200]}...' "
-                            f"Reference this context naturally in your response if relevant."
+                            f"[DEBUG] ✅ Claude is available - calling API for: {content[:50]}...")
+                        print(
+                            f"[DEBUG] use_claude={self.use_claude}, claude_handler={self.claude_handler is not None}")
+                        if detected_language == 'ku':
+                            print(
+                                f"[DEBUG] Language: Kurdish ({kurdish_dialect or 'general'})")
+                        # Add follow-up context to system prompt if this is a follow-up question
+                        follow_up_note = None
+                        if is_follow_up and follow_up_context:
+                            follow_up_note = (
+                                f"This appears to be a follow-up question related to the previous conversation. "
+                                f"The user's last question was answered with: '{follow_up_context[:200]}...' "
+                                f"Reference this context naturally in your response if relevant."
+                            )
+
+                        # Call Claude API with conversation history, summaries, and user facts
+                        result = await self.claude_handler.generate_response(
+                            messages=api_messages,
+                            user_name=message.author.display_name,
+                            summaries=summary_texts if summary_texts else None,
+                            detected_language=detected_language,
+                            kurdish_dialect=kurdish_dialect,
+                            user_facts=user_facts,
+                            follow_up_context=follow_up_note
                         )
+                        # Add provider info for consistency
+                        result["provider"] = "claude"
 
-                    # Call Claude API with conversation history, summaries, and user facts
-                    result = await self.claude_handler.generate_response(
-                        messages=api_messages,
-                        user_name=message.author.display_name,
-                        summaries=summary_texts if summary_texts else None,
-                        detected_language=detected_language,
-                        kurdish_dialect=kurdish_dialect,
-                        user_facts=user_facts,
-                        follow_up_context=follow_up_note
-                    )
-                    # Add provider info for consistency
-                    result["provider"] = "claude"
+                        if result["success"]:
+                            response_text = result["response"]
+                            used_claude = True
+                            tokens_used = result.get(
+                                "input_tokens", 0) + result.get("output_tokens", result.get("tokens_used", 0))
+                            provider_used = result.get("provider", "claude")
+                            model_used = f"{provider_used}-api"
+                            if self.api_manager:
+                                self.claude_responses += 1  # Track as API response
+                            else:
+                                self.claude_responses += 1
+                            print(
+                                f"[DEBUG] {provider_used.capitalize()} API success! Response length: {len(response_text)}")
 
-                    if result["success"]:
-                        response_text = result["response"]
-                        used_claude = True
-                        tokens_used = result.get(
-                            "input_tokens", 0) + result.get("output_tokens", result.get("tokens_used", 0))
-                        provider_used = result.get("provider", "claude")
-                        model_used = f"{provider_used}-api"
-                        if self.api_manager:
-                            self.claude_responses += 1  # Track as API response
-                        else:
-                            self.claude_responses += 1
-                        print(
-                            f"[DEBUG] {provider_used.capitalize()} API success! Response length: {len(response_text)}")
+                            # Track API usage with accurate cost calculation
+                            if self.statistics_tracker:
+                                try:
+                                    input_tokens = result.get(
+                                        "input_tokens", int(tokens_used * 0.7))
+                                    output_tokens = result.get(
+                                        "output_tokens", tokens_used - input_tokens)
 
-                        # Track API usage with accurate cost calculation
-                        if self.statistics_tracker:
-                            try:
-                                input_tokens = result.get(
-                                    "input_tokens", int(tokens_used * 0.7))
-                                output_tokens = result.get(
-                                    "output_tokens", tokens_used - input_tokens)
+                                    # Use provider name as model if from API manager
+                                    if self.api_manager:
+                                        model_used = f"{provider_used}-api"
 
-                                # Use provider name as model if from API manager
-                                if self.api_manager:
-                                    model_used = f"{provider_used}-api"
+                                    self.statistics_tracker.track_api_usage(
+                                        tokens_used=tokens_used,
+                                        success=True,
+                                        model_used=model_used,
+                                        input_tokens=input_tokens,
+                                        output_tokens=output_tokens,
+                                        user_id=user_id,
+                                        server_id=str(
+                                            message.guild.id) if message.guild else None
+                                    )
 
-                                self.statistics_tracker.track_api_usage(
-                                    tokens_used=tokens_used,
-                                    success=True,
-                                    model_used=model_used,
-                                    input_tokens=input_tokens,
-                                    output_tokens=output_tokens,
-                                    user_id=user_id,
-                                    server_id=str(
+                                    # Check budget and send alerts if needed
+                                    await self._check_budget_alerts()
+                                except Exception as e:
+                                    print(
+                                        f"[ERROR] Failed to track API usage: {e}")
+
+                            # Track question
+                            if self.statistics_tracker:
+                                try:
+                                    server_id = str(
                                         message.guild.id) if message.guild else None
-                                )
+                                    self.statistics_tracker.track_question(
+                                        user_id=user_id,
+                                        question_text=content[:500],
+                                        server_id=server_id,
+                                        language=detected_language
+                                    )
+                                except Exception as e:
+                                    print(f"[ERROR] Failed to track question: {e}")
+                        else:
+                            # API failed after retries
+                            error_msg = result.get('error', 'Unknown error')
+                            retry_attempts = result.get('retry_attempts', 0)
+                            print(
+                                f"[ERROR] Claude API failed after {retry_attempts} retries: {error_msg}")
 
-                                # Check budget and send alerts if needed
-                                await self._check_budget_alerts()
+                            # Track API failure
+                            if self.statistics_tracker:
+                                try:
+                                    provider_used = result.get(
+                                        "provider", "unknown")
+                                    model_used = f"{provider_used}-api" if self.api_manager else (
+                                        self.claude_handler.model if self.claude_handler else "unknown")
+                                    self.statistics_tracker.track_api_usage(
+                                        tokens_used=0,
+                                        success=False,
+                                        model_used=model_used,
+                                        input_tokens=0,
+                                        output_tokens=0,
+                                        user_id=user_id,
+                                        server_id=str(
+                                            message.guild.id) if message.guild else None
+                                    )
+                                    self.statistics_tracker.track_error(
+                                        error_type="API_ERROR",
+                                        error_message=f"Failed after {retry_attempts} retries: {error_msg[:150]}",
+                                        user_id=user_id,
+                                        server_id=str(
+                                            message.guild.id) if message.guild else None
+                                    )
+                                except Exception as e:
+                                    print(f"[ERROR] Failed to track error: {e}")
+
+                            # Check for error alerting
+                            self.error_count_recent += 1
+                            await self._check_error_alerts()
+
+                            # Use Claude's user-friendly error message if available, otherwise use static fallback
+                            if result.get('response') and result.get('user_friendly'):
+                                # Claude provided a user-friendly error message
+                                response_text = result['response']
+                                print(
+                                    f"[DEBUG] Using Claude's user-friendly error message: {response_text[:50]}...")
+                            else:
+                                # Fallback to static responses only if Claude didn't provide a message
+                                response_text = find_response(
+                                    content, detected_language, kurdish_dialect)
+                                if not response_text or len(response_text) < 10:
+                                    # Enhanced fallback message
+                                    if detected_language == 'ku':
+                                        if kurdish_dialect == 'Sorani':
+                                            response_text = "ببورە، هەندێک کێشە هەیە. تکایە دواتر هەوڵ بدەوە."
+                                        else:
+                                            response_text = "Bibûre, hinek kêşe heye. Tika duar hewl bide."
+                                    else:
+                                        response_text = (
+                                            "I'm having a bit of trouble right now, but I'm still here! "
+                                            "Try asking again in a moment, or rephrase your question. "
+                                            "I'll do my best to help! 😊"
+                                        )
+                                print(
+                                    f"[DEBUG] Using static fallback response: {response_text[:50]}...")
+
+                            model_used = "static_fallback"
+                            self.fallback_responses += 1
+                    else:
+                        # Claude not available - this should NOT happen if API key is set correctly
+                        print(
+                            f"[ERROR] ❌ Claude not available! use_claude={self.use_claude}, handler={self.claude_handler is not None}")
+                        print(
+                            f"[ERROR] Claude API Key present in env: {bool(os.getenv('CLAUDE_API_KEY'))}")
+                        print(f"[ERROR] CLAUDE_AVAILABLE: {CLAUDE_AVAILABLE}")
+                        print(
+                            f"[ERROR] This means Claude handler failed to initialize. Check Railway logs for initialization errors.")
+
+                        # Try to reinitialize Claude handler if API key is present
+                        claude_key = os.getenv("CLAUDE_API_KEY")
+                        if claude_key and CLAUDE_AVAILABLE and not self.claude_handler:
+                            print(
+                                f"[INFO] Attempting to reinitialize Claude handler...")
+                            try:
+                                self.claude_handler = ClaudeHandler()
+                                self.use_claude = True
+                                print(
+                                    f"[OK] Claude handler reinitialized successfully!")
+                                # Retry with Claude
+                                follow_up_note_retry = None
+                                if is_follow_up and follow_up_context:
+                                    follow_up_note_retry = (
+                                        f"This appears to be a follow-up question related to the previous conversation. "
+                                        f"The user's last question was answered with: '{follow_up_context[:200]}...' "
+                                        f"Reference this context naturally in your response if relevant."
+                                    )
+                                result = await self.claude_handler.generate_response(
+                                    messages=api_messages,
+                                    user_name=message.author.display_name,
+                                    summaries=summary_texts if summary_texts else None,
+                                    detected_language=detected_language,
+                                    kurdish_dialect=kurdish_dialect,
+                                    user_facts=user_facts,
+                                    follow_up_context=follow_up_note_retry
+                                )
+                                if result["success"]:
+                                    response_text = result["response"]
+                                    used_claude = True
+                                    tokens_used = result.get("tokens_used", 0)
+                                    model_used = self.claude_handler.model
+                                    self.claude_responses += 1
+                                    print(
+                                        f"[DEBUG] ✅ Claude API success after reinit! Response length: {len(response_text)}")
+                                else:
+                                    # Use Claude's user-friendly error message
+                                    if result.get('response') and result.get('user_friendly'):
+                                        response_text = result['response']
+                                    else:
+                                        response_text = "I'm having trouble connecting. Please try again in a moment. 😊"
+                                    model_used = "static_fallback"
+                                    self.fallback_responses += 1
                             except Exception as e:
                                 print(
-                                    f"[ERROR] Failed to track API usage: {e}")
-
-                        # Track question
-                        if self.statistics_tracker:
-                            try:
-                                server_id = str(
-                                    message.guild.id) if message.guild else None
-                                self.statistics_tracker.track_question(
-                                    user_id=user_id,
-                                    question_text=content[:500],
-                                    server_id=server_id,
-                                    language=detected_language
-                                )
-                            except Exception as e:
-                                print(f"[ERROR] Failed to track question: {e}")
-                    else:
-                        # API failed after retries
-                        error_msg = result.get('error', 'Unknown error')
-                        retry_attempts = result.get('retry_attempts', 0)
-                        print(
-                            f"[ERROR] Claude API failed after {retry_attempts} retries: {error_msg}")
-
-                        # Track API failure
-                        if self.statistics_tracker:
-                            try:
-                                provider_used = result.get(
-                                    "provider", "unknown")
-                                model_used = f"{provider_used}-api" if self.api_manager else (
-                                    self.claude_handler.model if self.claude_handler else "unknown")
-                                self.statistics_tracker.track_api_usage(
-                                    tokens_used=0,
-                                    success=False,
-                                    model_used=model_used,
-                                    input_tokens=0,
-                                    output_tokens=0,
-                                    user_id=user_id,
-                                    server_id=str(
-                                        message.guild.id) if message.guild else None
-                                )
-                                self.statistics_tracker.track_error(
-                                    error_type="API_ERROR",
-                                    error_message=f"Failed after {retry_attempts} retries: {error_msg[:150]}",
-                                    user_id=user_id,
-                                    server_id=str(
-                                        message.guild.id) if message.guild else None
-                                )
-                            except Exception as e:
-                                print(f"[ERROR] Failed to track error: {e}")
-
-                        # Check for error alerting
-                        self.error_count_recent += 1
-                        await self._check_error_alerts()
-
-                        # Use Claude's user-friendly error message if available, otherwise use static fallback
-                        if result.get('response') and result.get('user_friendly'):
-                            # Claude provided a user-friendly error message
-                            response_text = result['response']
-                            print(
-                                f"[DEBUG] Using Claude's user-friendly error message: {response_text[:50]}...")
-                        else:
-                            # Fallback to static responses only if Claude didn't provide a message
-                            response_text = find_response(
-                                content, detected_language, kurdish_dialect)
-                            if not response_text or len(response_text) < 10:
-                                # Enhanced fallback message
+                                    f"[ERROR] Failed to reinitialize Claude: {e}")
+                                # Fall through to static response
                                 if detected_language == 'ku':
-                                    if kurdish_dialect == 'Sorani':
-                                        response_text = "ببورە، هەندێک کێشە هەیە. تکایە دواتر هەوڵ بدەوە."
-                                    else:
-                                        response_text = "Bibûre, hinek kêşe heye. Tika duar hewl bide."
+                                    response_text = "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن بە AI. تکایە دواتر هەوڵ بدەوە یان بە زمانی ئینگلیزی بپرسە."
                                 else:
                                     response_text = (
-                                        "I'm having a bit of trouble right now, but I'm still here! "
-                                        "Try asking again in a moment, or rephrase your question. "
-                                        "I'll do my best to help! 😊"
+                                        "I'm currently experiencing issues connecting to the AI service. "
+                                        "Please try again in a moment, or use `!help` to see available commands. "
+                                        "If this persists, the Claude API key may need to be configured."
                                     )
-                            print(
-                                f"[DEBUG] Using static fallback response: {response_text[:50]}...")
-
-                        model_used = "static_fallback"
-                        self.fallback_responses += 1
-                else:
-                    # Claude not available - this should NOT happen if API key is set correctly
-                    print(
-                        f"[ERROR] ❌ Claude not available! use_claude={self.use_claude}, handler={self.claude_handler is not None}")
-                    print(
-                        f"[ERROR] Claude API Key present in env: {bool(os.getenv('CLAUDE_API_KEY'))}")
-                    print(f"[ERROR] CLAUDE_AVAILABLE: {CLAUDE_AVAILABLE}")
-                    print(
-                        f"[ERROR] This means Claude handler failed to initialize. Check Railway logs for initialization errors.")
-
-                    # Try to reinitialize Claude handler if API key is present
-                    claude_key = os.getenv("CLAUDE_API_KEY")
-                    if claude_key and CLAUDE_AVAILABLE and not self.claude_handler:
-                        print(
-                            f"[INFO] Attempting to reinitialize Claude handler...")
-                        try:
-                            self.claude_handler = ClaudeHandler()
-                            self.use_claude = True
-                            print(
-                                f"[OK] Claude handler reinitialized successfully!")
-                            # Retry with Claude
-                            follow_up_note_retry = None
-                            if is_follow_up and follow_up_context:
-                                follow_up_note_retry = (
-                                    f"This appears to be a follow-up question related to the previous conversation. "
-                                    f"The user's last question was answered with: '{follow_up_context[:200]}...' "
-                                    f"Reference this context naturally in your response if relevant."
-                                )
-                            result = await self.claude_handler.generate_response(
-                                messages=api_messages,
-                                user_name=message.author.display_name,
-                                summaries=summary_texts if summary_texts else None,
-                                detected_language=detected_language,
-                                kurdish_dialect=kurdish_dialect,
-                                user_facts=user_facts,
-                                follow_up_context=follow_up_note_retry
-                            )
-                            if result["success"]:
-                                response_text = result["response"]
-                                used_claude = True
-                                tokens_used = result.get("tokens_used", 0)
-                                model_used = self.claude_handler.model
-                                self.claude_responses += 1
-                                print(
-                                    f"[DEBUG] ✅ Claude API success after reinit! Response length: {len(response_text)}")
-                            else:
-                                # Use Claude's user-friendly error message
-                                if result.get('response') and result.get('user_friendly'):
-                                    response_text = result['response']
-                                else:
-                                    response_text = "I'm having trouble connecting. Please try again in a moment. 😊"
                                 model_used = "static_fallback"
                                 self.fallback_responses += 1
-                        except Exception as e:
-                            print(
-                                f"[ERROR] Failed to reinitialize Claude: {e}")
-                            # Fall through to static response
+                        else:
+                            # No API key or module not available
                             if detected_language == 'ku':
                                 response_text = "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن بە AI. تکایە دواتر هەوڵ بدەوە یان بە زمانی ئینگلیزی بپرسە."
                             else:
@@ -2428,18 +2440,6 @@ class AIBootBot(commands.Bot):
                                 )
                             model_used = "static_fallback"
                             self.fallback_responses += 1
-                    else:
-                        # No API key or module not available
-                        if detected_language == 'ku':
-                            response_text = "ببورە، هەندێک کێشە هەیە لە دەستگەیشتن بە AI. تکایە دواتر هەوڵ بدەوە یان بە زمانی ئینگلیزی بپرسە."
-                        else:
-                            response_text = (
-                                "I'm currently experiencing issues connecting to the AI service. "
-                                "Please try again in a moment, or use `!help` to see available commands. "
-                                "If this persists, the Claude API key may need to be configured."
-                            )
-                        model_used = "static_fallback"
-                        self.fallback_responses += 1
 
                 # Store bot response in database (persistent memory)
                 if self.memory_manager:
