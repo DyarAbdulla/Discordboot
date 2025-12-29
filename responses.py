@@ -35,6 +35,10 @@ RESPONSES = {
         "keywords": ["what is your name", "who are you", "what's your name"],
         "response": "My name is dyarboot! I'm here to help you. 🤖"
     },
+    "owner": {
+        "keywords": ["who is your owner", "who owns you", "who created you", "who made you", "your owner", "your creator", "who is the owner"],
+        "response": "MrDYAR owner and administrator bot 👑"
+    },
     "help": {
         "keywords": ["help", "what can you do", "how can you help"],
         "response": "I can chat with you! Try saying hello, ask me questions, or use !commands for more options."

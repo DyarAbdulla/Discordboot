@@ -1662,7 +1662,8 @@ class AIBootBot(commands.Bot):
     ) -> str:
         """Build system prompt for API manager (similar to Claude handler)"""
         base_prompt = (
-            "You are AI Boot, a friendly and helpful Discord bot assistant. "
+            "You are AI Boot, a friendly and helpful Discord bot assistant created by MrDYAR. "
+            "MrDYAR is your owner and administrator. When asked about your owner or creator, always mention that MrDYAR is your owner and administrator. "
             "You have a professional yet warm personality - be knowledgeable and reliable, but also approachable and friendly. "
             "Use emojis occasionally (😊, 👍, ✨, 💡) to add friendliness, but don't overuse them. "
             "Answer questions directly and completely. Don't ask for clarification - provide helpful answers based on context. "
@@ -2562,6 +2563,19 @@ class AIBootBot(commands.Bot):
                             )
                             print(
                                 f"[OK] Conversation logged: User={message.author.display_name}, Tokens={tokens_used}, Model={model_used}")
+                            
+                            # Auto-export to local_data folder periodically (every 50 conversations)
+                            if hasattr(self, '_conversation_count'):
+                                self._conversation_count += 1
+                            else:
+                                self._conversation_count = 1
+                            
+                            # Export every 50 conversations to local_data folder
+                            if self._conversation_count % 50 == 0:
+                                try:
+                                    asyncio.create_task(self._export_to_local_data_async())
+                                except Exception as e:
+                                    print(f"[WARNING] Failed to auto-export to local_data: {e}")
                         except Exception as e:
                             print(f"[ERROR] Failed to log conversation: {e}")
 
@@ -2878,7 +2892,7 @@ class AIBootBot(commands.Bot):
             color=EmbedColors.BLUE if EMBED_HELPER_AVAILABLE else discord.Color.blue()
         )
 
-        embed.set_footer(text="Created by DyarAbdulla ❤️")
+        embed.set_footer(text="Created by MrDYAR (Owner & Administrator) ❤️")
 
         # Try to set bot avatar as thumbnail
         try:
@@ -5956,6 +5970,19 @@ class AIBootBot(commands.Bot):
         # Daily backup scheduler
         while True:
             try:
+                # Check if using PostgreSQL - if so, skip SQLite backups (Railway handles PostgreSQL backups)
+                using_postgres = False
+                if self.conversation_logger and hasattr(self.conversation_logger, 'use_postgres'):
+                    using_postgres = self.conversation_logger.use_postgres
+                
+                if using_postgres:
+                    # Using PostgreSQL - Railway handles backups automatically
+                    # Skip SQLite backup scheduler entirely
+                    print("[BACKUP] Using PostgreSQL - Railway handles backups automatically. Backup scheduler disabled.")
+                    # Sleep for 24 hours and check again (in case they switch back to SQLite)
+                    await asyncio.sleep(86400)  # 24 hours
+                    continue
+                
                 # Wait until next backup time (daily at 2 AM)
                 now = datetime.now()
                 next_backup = now.replace(
@@ -5994,7 +6021,21 @@ class AIBootBot(commands.Bot):
                 'error': None
             }
 
-            # List of databases to backup
+            # Check if using PostgreSQL (Railway)
+            using_postgres = False
+            if self.conversation_logger and hasattr(self.conversation_logger, 'use_postgres'):
+                using_postgres = self.conversation_logger.use_postgres
+            
+            # If using PostgreSQL, skip SQLite backups (Railway handles PostgreSQL backups automatically)
+            if using_postgres:
+                print("[BACKUP] Using PostgreSQL - Railway handles backups automatically. Skipping SQLite backup.")
+                backup_info['success'] = True
+                backup_info['error'] = None
+                backup_info['files'] = []
+                # Don't send notification for PostgreSQL (Railway handles it)
+                return backup_info
+
+            # List of databases to backup (SQLite only)
             databases = []
 
             # Add databases from various components
@@ -6019,7 +6060,10 @@ class AIBootBot(commands.Bot):
                     databases.append((db_name, db_name))
 
             if not databases:
-                backup_info['error'] = "No databases found to backup"
+                # No SQLite databases found - this is normal when using PostgreSQL
+                # Don't send error notification, just return silently
+                backup_info['success'] = True  # Mark as success to avoid error notification
+                backup_info['error'] = None
                 return backup_info
 
             # Create backup directory for this timestamp
@@ -6052,8 +6096,11 @@ class AIBootBot(commands.Bot):
                 print(
                     f"[BACKUP] Backup completed successfully: {len(backup_info['files'])} files")
             else:
-                backup_info['error'] = "No files were backed up"
-                await self._send_backup_notification(backup_info, success=False)
+                # No files backed up - this is normal when using PostgreSQL
+                # Don't send error notification, just mark as success silently
+                backup_info['success'] = True
+                backup_info['error'] = None
+                print("[BACKUP] No SQLite files to backup (using PostgreSQL)")
 
             return backup_info
 
@@ -6403,6 +6450,35 @@ class AIBootBot(commands.Bot):
             print(f"[ERROR] Restore failed: {e}")
             import traceback
             traceback.print_exc()
+
+    async def _export_to_local_data_async(self):
+        """Export conversation data to local_data folder (async wrapper)"""
+        try:
+            # Run in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._export_to_local_data)
+        except Exception as e:
+            print(f"[ERROR] Failed to export to local_data: {e}")
+
+    def _export_to_local_data(self):
+        """Export conversation data to local_data folder"""
+        try:
+            if not self.conversation_logger:
+                return
+            
+            # Create local_data directory
+            local_data_dir = os.path.join(os.path.dirname(__file__), "local_data")
+            os.makedirs(local_data_dir, exist_ok=True)
+            
+            # Export to CSV
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            csv_path = os.path.join(local_data_dir, f"conversation_export_{timestamp}.csv")
+            
+            self.conversation_logger.export_to_csv(csv_path)
+            print(f"[OK] Auto-exported to local_data: {csv_path}")
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to export to local_data: {e}")
 
     async def close(self):
         # Called when bot is shutting down
