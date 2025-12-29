@@ -2052,7 +2052,22 @@ class AIBootBot(commands.Bot):
                     used_claude = False  # Not using API
                     print(
                         f"[CACHE HIT] Using cached response for: {content[:50]}...")
-                else:
+                
+                # Check for static keyword responses (e.g., "who is your owner")
+                # This ensures specific questions get consistent answers
+                if not response_text:
+                    static_response = find_response(content, detected_language, kurdish_dialect)
+                    # Only use static response if it's not the default fallback
+                    if static_response and "still learning" not in static_response.lower() and "hêj hîn dibim" not in static_response:
+                        # Check if this is a specific response (not default)
+                        content_lower = content.lower()
+                        owner_keywords = ["who is your owner", "who owns you", "who created you", "who made you", "your owner", "your creator", "who is the owner"]
+                        if any(keyword in content_lower for keyword in owner_keywords):
+                            response_text = static_response
+                            used_claude = False
+                            print(f"[STATIC RESPONSE] Using keyword match for: {content[:50]}...")
+                
+                if not response_text:
                     # Get user facts for personalization
                     user_facts = []
                 if self.memory_manager:
