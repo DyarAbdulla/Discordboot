@@ -2043,6 +2043,13 @@ class AIBootBot(commands.Bot):
                 model_used = "unknown"
                 is_cached = False
 
+                # Initialize user_facts early (needed for API calls and error handling)
+                user_facts = []
+                if self.memory_manager:
+                    facts_list = self.memory_manager.get_all_user_facts(
+                        user_id, channel_id)
+                    user_facts = facts_list
+
                 # Use cached response if available
                 if cached_response:
                     response_text = cached_response['response']
@@ -2054,7 +2061,7 @@ class AIBootBot(commands.Bot):
                         f"[CACHE HIT] Using cached response for: {content[:50]}...")
                 
                 # Check for static keyword responses (e.g., "who is your owner")
-                # This ensures specific questions get consistent answers
+                # This ensures specific questions get consistent answers BEFORE calling AI
                 if not response_text:
                     static_response = find_response(content, detected_language, kurdish_dialect)
                     # Only use static response if it's not the default fallback
@@ -2065,89 +2072,142 @@ class AIBootBot(commands.Bot):
                         if any(keyword in content_lower for keyword in owner_keywords):
                             response_text = static_response
                             used_claude = False
+                            tokens_used = 0
+                            model_used = "static_response"
                             print(f"[STATIC RESPONSE] Using keyword match for: {content[:50]}...")
-                
+
+                # Only call API if we don't already have a response from cache or static responses
                 if not response_text:
-                    # Get user facts for personalization
-                    user_facts = []
-                if self.memory_manager:
-                    facts_list = self.memory_manager.get_all_user_facts(
-                        user_id, channel_id)
-                    user_facts = facts_list
-
-                # Check budget before making API call
-                if self.statistics_tracker:
-                    budget_settings = self.statistics_tracker.get_budget_settings()
-                    budget_amount = budget_settings.get("budget_amount", 0.0)
-                    if budget_amount > 0:
-                        current_month_cost = self.statistics_tracker.get_current_month_cost()
-                        if current_month_cost >= budget_amount:
-                            self.budget_exceeded = True
-                            if EMBED_HELPER_AVAILABLE:
-                                embed = EmbedHelper.create_error_embed(
-                                    title="💰 Budget Exceeded",
-                                    description=(
-                                        "Monthly API budget has been exceeded.\n\n"
-                                        "**Current Spending**: ${:.2f}\n"
-                                        "**Budget**: ${:.2f}\n\n"
-                                        "Please update your budget using `!budget [amount]` or wait until next month."
-                                    ).format(current_month_cost, budget_amount)
-                                )
-                                await message.reply(embed=embed)
+                    # Check budget before making API call
+                    if self.statistics_tracker:
+                        budget_settings = self.statistics_tracker.get_budget_settings()
+                        budget_amount = budget_settings.get("budget_amount", 0.0)
+                        if budget_amount > 0:
+                            current_month_cost = self.statistics_tracker.get_current_month_cost()
+                            if current_month_cost >= budget_amount:
+                                self.budget_exceeded = True
+                                if EMBED_HELPER_AVAILABLE:
+                                    embed = EmbedHelper.create_error_embed(
+                                        title="💰 Budget Exceeded",
+                                        description=(
+                                            "Monthly API budget has been exceeded.\n\n"
+                                            "**Current Spending**: ${:.2f}\n"
+                                            "**Budget**: ${:.2f}\n\n"
+                                            "Please update your budget using `!budget [amount]` or wait until next month."
+                                        ).format(current_month_cost, budget_amount)
+                                    )
+                                    await message.reply(embed=embed)
+                                else:
+                                    await message.reply(
+                                        f"💰 **Budget Exceeded**\n"
+                                        f"Monthly API budget has been exceeded.\n"
+                                        f"Current: ${current_month_cost:.2f} / Budget: ${budget_amount:.2f}\n"
+                                        f"Use `!budget [amount]` to update."
+                                    )
+                                return
                             else:
-                                await message.reply(
-                                    f"💰 **Budget Exceeded**\n"
-                                    f"Monthly API budget has been exceeded.\n"
-                                    f"Current: ${current_month_cost:.2f} / Budget: ${budget_amount:.2f}\n"
-                                    f"Use `!budget [amount]` to update."
-                                )
-                            return
-                        else:
-                            self.budget_exceeded = False
+                                self.budget_exceeded = False
 
-                # Use Multi-API Manager if available, otherwise fallback to Claude handler
-                if self.api_manager:
-                    print(
-                        f"[DEBUG] Using Multi-API Manager for: {content[:50]}...")
-                    if detected_language == 'ku':
+                    # Use Multi-API Manager if available, otherwise fallback to Claude handler
+                    if self.api_manager:
                         print(
-                            f"[DEBUG] Language: Kurdish ({kurdish_dialect or 'general'})")
+                            f"[DEBUG] Using Multi-API Manager for: {content[:50]}...")
+                        if detected_language == 'ku':
+                            print(
+                                f"[DEBUG] Language: Kurdish ({kurdish_dialect or 'general'})")
 
-                    # Add follow-up context to system prompt if this is a follow-up question
-                    follow_up_note = None
-                    if is_follow_up and follow_up_context:
-                        follow_up_note = (
-                            f"This appears to be a follow-up question related to the previous conversation. "
-                            f"The user's last question was answered with: '{follow_up_context[:200]}...' "
-                            f"Reference this context naturally in your response if relevant."
+                        # Add follow-up context to system prompt if this is a follow-up question
+                        follow_up_note = None
+                        if is_follow_up and follow_up_context:
+                            follow_up_note = (
+                                f"This appears to be a follow-up question related to the previous conversation. "
+                                f"The user's last question was answered with: '{follow_up_context[:200]}...' "
+                                f"Reference this context naturally in your response if relevant."
+                            )
+
+                        # Build system prompt
+                        system_prompt = self._build_system_prompt(
+                            user_name=message.author.display_name,
+                            summaries=summary_texts if summary_texts else None,
+                            detected_language=detected_language,
+                            kurdish_dialect=kurdish_dialect,
+                            user_facts=user_facts,
+                            follow_up_context=follow_up_note
                         )
 
-                    # Build system prompt
-                    system_prompt = self._build_system_prompt(
-                        user_name=message.author.display_name,
-                        summaries=summary_texts if summary_texts else None,
-                        detected_language=detected_language,
-                        kurdish_dialect=kurdish_dialect,
-                        user_facts=user_facts,
-                        follow_up_context=follow_up_note
-                    )
+                        # Call API Manager with intelligent routing
+                        result = await self.api_manager.generate_response(
+                            messages=api_messages,
+                            system_prompt=system_prompt,
+                            user_name=message.author.display_name,
+                            detected_language=detected_language,
+                            has_image=False,
+                            query=content,
+                            max_tokens=300,
+                            temperature=0.7
+                        )
 
-                    # Call API Manager with intelligent routing
-                    result = await self.api_manager.generate_response(
-                        messages=api_messages,
-                        system_prompt=system_prompt,
-                        user_name=message.author.display_name,
-                        detected_language=detected_language,
-                        has_image=False,
-                        query=content,
-                        max_tokens=300,
-                        temperature=0.7
-                    )
+                        # Extract provider info for logging
+                        provider_used = result.get("provider", "unknown")
+                        print(
+                            f"[DEBUG] {provider_used.capitalize()} API used for this query")
 
-                    # Extract provider info for logging
-                    provider_used = result.get("provider", "unknown")
-                    print(
-                        f"[DEBUG] {provider_used.capitalize()} API used for this query")
+                        # Process API Manager result
+                        if result.get("success"):
+                            response_text = result.get("response", "")
+                            used_claude = True
+                            tokens_used = result.get("tokens_used", 0)
+                            input_tokens = result.get("input_tokens", int(tokens_used * 0.7))
+                            output_tokens = result.get("output_tokens", tokens_used - input_tokens)
+                            model_used = f"{provider_used}-api"
+                            self.claude_responses += 1
+                            print(
+                                f"[DEBUG] {provider_used.capitalize()} API success! Response length: {len(response_text)}")
+
+                            # Track API usage
+                            if self.statistics_tracker:
+                                try:
+                                    self.statistics_tracker.track_api_usage(
+                                        tokens_used=tokens_used,
+                                        success=True,
+                                        model_used=model_used,
+                                        input_tokens=input_tokens,
+                                        output_tokens=output_tokens,
+                                        user_id=user_id,
+                                        server_id=str(message.guild.id) if message.guild else None
+                                    )
+                                    await self._check_budget_alerts()
+                                except Exception as e:
+                                    print(f"[ERROR] Failed to track API usage: {e}")
+
+                            # Track question
+                            if self.statistics_tracker:
+                                try:
+                                    server_id = str(message.guild.id) if message.guild else None
+                                    self.statistics_tracker.track_question(
+                                        user_id=user_id,
+                                        question_text=content[:500],
+                                        server_id=server_id,
+                                        language=detected_language
+                                    )
+                                except Exception as e:
+                                    print(f"[ERROR] Failed to track question: {e}")
+                        else:
+                            # API Manager failed - fallback to static responses
+                            error_msg = result.get('error', 'Unknown error')
+                            print(f"[ERROR] {provider_used.capitalize()} API failed: {error_msg}")
+                            response_text = find_response(content, detected_language, kurdish_dialect)
+                            if not response_text or len(response_text) < 10:
+                                if detected_language == 'ku':
+                                    response_text = "ببورە، هەندێک کێشە هەیە. تکایە دواتر هەوڵ بدەوە."
+                                else:
+                                    response_text = (
+                                        "I'm having a bit of trouble right now, but I'm still here! "
+                                        "Try asking again in a moment, or rephrase your question. "
+                                        "I'll do my best to help! 😊"
+                                    )
+                            model_used = "static_fallback"
+                            self.fallback_responses += 1
 
                 elif self.use_claude and self.claude_handler:
                     print(
